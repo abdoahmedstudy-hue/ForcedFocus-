@@ -2151,7 +2151,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
             return True
         if origin in ("http://localhost:7070", "http://127.0.0.1:7070"):
             return True
-        if origin.startswith("chrome-extension://"):
+        if origin == "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc":
             return True
         return False
 
@@ -2165,7 +2165,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
 
     def _get_cors_origin(self) -> str:
         origin = self.headers.get("Origin")
-        if origin and (origin in ("http://localhost:7070", "http://127.0.0.1:7070") or origin.startswith("chrome-extension://")):
+        if origin and (origin in ("http://localhost:7070", "http://127.0.0.1:7070") or origin == "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc"):
             return origin
         return "http://127.0.0.1:7070"
 
