@@ -988,13 +988,13 @@ class ForcedFocusDaemon:
                 else:
                     msg = f"Blacklist mode: {count} domains blocked for {duration_minutes} min."
 
-            logging.info("Session started (%s) — expires %s.", mode, expiry.strftime("%H:%M:%S"))
+            logging.info("Session started (%s) — expires %s.", mode, self.session_expiry.strftime("%H:%M:%S"))
             return {
                 "status": "ok",
                 "message": msg,
                 "mode": mode,
                 "domains_count": count,
-                "expires_at": expiry.strftime("%H:%M:%S"),
+                "expires_at": self.session_expiry.strftime("%H:%M:%S"),
             }
 
     def _request_stop(self, passphrase: str) -> dict:
