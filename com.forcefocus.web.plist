@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ForcedFocus Web UI LaunchAgent
+  
+  This plist instructs launchd to:
+  - Start the web server at user login (RunAtLoad)
+  - Restart it if it exits (KeepAlive)
+  - Run as the current user (LaunchAgent, not LaunchDaemon)
+  
+  Installed to: ~/Library/LaunchAgents/com.forcefocus.web.plist
+  Load:   launchctl load ~/Library/LaunchAgents/com.forcefocus.web.plist
+  Unload: launchctl unload ~/Library/LaunchAgents/com.forcefocus.web.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.forcefocus.web</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/python3</string>
+        <string>/usr/local/bin/forcefocus_web.py</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/forcefocus_web.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/forcefocus_web_error.log</string>
+
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+</dict>
+</plist>

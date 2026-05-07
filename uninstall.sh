@@ -16,8 +16,10 @@ NC='\033[0m'
 
 DAEMON_DST="/usr/local/bin/forcefocus_daemon.py"
 CLI_DST="/usr/local/bin/forcefocus"
+WEB_DST="/usr/local/bin/forcefocus_web.py"
 PLIST_DST="/Library/LaunchDaemons/com.forcefocus.daemon.plist"
 CONFIG_DIR="/etc/forcefocus"
+WEB_DIR_DST="/usr/local/share/forcefocus"
 SOCK_PATH="/var/run/forcefocus.sock"
 PLIST_LABEL="com.forcefocus.daemon"
 HOSTS_PATH="/private/etc/hosts"
@@ -46,7 +48,20 @@ if [[ -f "$KS_HASH_FILE" ]]; then
     echo ""
 
     # Verify using Python (same PBKDF2 logic as daemon)
-    VERIFY_RESULT=$(/usr/bin/python3 -c "
+    # Detect Python 3 binary
+    PYTHON_BIN=""
+    for candidate in /usr/local/bin/python3 /usr/bin/python3; do
+        if "$candidate" --version &>/dev/null 2>&1; then
+            PYTHON_BIN="$candidate"
+            break
+        fi
+    done
+    if [[ -z "$PYTHON_BIN" ]]; then
+        echo -e "${RED}  ✗ Python 3 not found. Cannot verify passphrase.${NC}"
+        exit 1
+    fi
+
+    VERIFY_RESULT=$($PYTHON_BIN -c "
 import json, hashlib, sys
 try:
     stored = json.load(open('${KS_HASH_FILE}'))
@@ -76,6 +91,21 @@ else
     echo -e "${YELLOW}  ⚠ Daemon was not loaded.${NC}"
 fi
 
+# ── Unload Web LaunchAgent ────────────────────────────────────────────────────
+REAL_USER="${SUDO_USER:-$USER}"
+REAL_HOME=$(eval echo "~${REAL_USER}")
+WEB_PLIST_DST="${REAL_HOME}/Library/LaunchAgents/com.forcefocus.web.plist"
+
+echo -e "${CYAN}  Unloading Web UI LaunchAgent...${NC}"
+if [[ -f "$WEB_PLIST_DST" ]]; then
+    sudo -u "$REAL_USER" launchctl unload "$WEB_PLIST_DST" 2>/dev/null || true
+    rm -f "$WEB_PLIST_DST"
+    echo -e "${GREEN}  ✓ Web LaunchAgent removed.${NC}"
+else
+    echo -e "${YELLOW}  ⚠ Web LaunchAgent not found.${NC}"
+fi
+pkill -f "forcefocus_web.py" 2>/dev/null || true
+
 # ── Remove uchg flag from /etc/hosts ──────────────────────────────────────────
 echo -e "${CYAN}  Removing immutable flag from /etc/hosts...${NC}"
 chflags nouchg "$HOSTS_PATH" 2>/dev/null || true
@@ -84,7 +114,7 @@ chflags nouchg "$HOSTS_PATH" 2>/dev/null || true
 echo -e "${CYAN}  Restoring /etc/hosts...${NC}"
 if grep -q "$MARKER_BEGIN" "$HOSTS_PATH" 2>/dev/null; then
     # Use sed to remove the block (inclusive of markers)
-    /usr/bin/python3 -c "
+    $PYTHON_BIN -c "
 from pathlib import Path
 hosts = Path('${HOSTS_PATH}')
 content = hosts.read_text()
@@ -115,15 +145,30 @@ dscacheutil -flushcache 2>/dev/null || true
 killall -HUP mDNSResponder 2>/dev/null || true
 echo -e "${GREEN}  ✓ DNS cache flushed.${NC}"
 
+# ── Restore DNS servers (critical for whitelist mode) ─────────────────────────
+echo -e "${CYAN}  Restoring DNS servers to DHCP defaults...${NC}"
+for svc in $(networksetup -listallnetworkservices 2>/dev/null | tail -n +2); do
+    svc_trimmed=$(echo "$svc" | sed 's/^[* ]*//')
+    if [[ -n "$svc_trimmed" ]]; then
+        networksetup -setdnsservers "$svc_trimmed" empty 2>/dev/null || true
+    fi
+done
+echo -e "${GREEN}  ✓ DNS servers restored.${NC}"
+
 # ── Remove system files ───────────────────────────────────────────────────────
 echo -e "${CYAN}  Removing installed files...${NC}"
 
-for f in "$DAEMON_DST" "$CLI_DST" "$PLIST_DST" "$SOCK_PATH"; do
+for f in "$DAEMON_DST" "$CLI_DST" "$WEB_DST" "$PLIST_DST" "$SOCK_PATH"; do
     if [[ -e "$f" ]]; then
         rm -f "$f"
         echo -e "    Removed: ${f}"
     fi
 done
+
+if [[ -d "$WEB_DIR_DST" ]]; then
+    rm -rf "$WEB_DIR_DST"
+    echo -e "    Removed: ${WEB_DIR_DST}"
+fi
 
 # ── Remove config directory (preserve backups) ───────────────────────────────
 if [[ -d "$CONFIG_DIR" ]]; then

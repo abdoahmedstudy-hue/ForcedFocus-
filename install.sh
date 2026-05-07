@@ -46,12 +46,17 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Verify source files exist
-for f in "$DAEMON_SRC" "$CLI_SRC" "$PLIST_SRC"; do
+for f in "$DAEMON_SRC" "$CLI_SRC" "$WEB_SRC" "$PLIST_SRC"; do
     if [[ ! -f "$f" ]]; then
         echo -e "${RED}✗ Missing source file: ${f}${NC}"
         exit 1
     fi
 done
+
+if [[ ! -d "$WEB_DIR_SRC" ]]; then
+    echo -e "${RED}✗ Missing web directory: ${WEB_DIR_SRC}${NC}"
+    exit 1
+fi
 
 # Check for Python 3 — prefer /usr/local/bin (standalone installer) over /usr/bin (Xcode CLT shim)
 PYTHON_BIN=""
@@ -108,6 +113,8 @@ chmod -R 755 "$WEB_DIR_DST"
 
 echo -e "${CYAN}  Installing plist  → ${PLIST_DST}${NC}"
 cp "$PLIST_SRC" "$PLIST_DST"
+# Update Python path in plist to match detected binary
+sed -i '' "s|/usr/local/bin/python3|${PYTHON_BIN}|g" "$PLIST_DST"
 chmod 644 "$PLIST_DST"
 chown root:wheel "$PLIST_DST"
 
@@ -160,20 +167,58 @@ else
     exit 1
 fi
 
+# ── Install Web UI LaunchAgent (runs as user, auto-starts on login) ──────────
+WEB_PLIST_SRC="${SCRIPT_DIR}/com.forcefocus.web.plist"
+REAL_USER="${SUDO_USER:-$USER}"
+REAL_HOME=$(eval echo "~${REAL_USER}")
+AGENT_DIR="${REAL_HOME}/Library/LaunchAgents"
+WEB_PLIST_DST="${AGENT_DIR}/com.forcefocus.web.plist"
+WEB_PLIST_LABEL="com.forcefocus.web"
+
+if [[ -f "$WEB_PLIST_SRC" ]]; then
+    echo -e "${CYAN}  Installing web LaunchAgent...${NC}"
+    mkdir -p "$AGENT_DIR"
+
+    # Unload existing if present
+    sudo -u "$REAL_USER" launchctl unload "$WEB_PLIST_DST" 2>/dev/null || true
+    # Kill any existing web server
+    pkill -f "forcefocus_web.py" 2>/dev/null || true
+    sleep 1
+
+    cp "$WEB_PLIST_SRC" "$WEB_PLIST_DST"
+    # Update Python path in web plist
+    sed -i '' "s|/usr/local/bin/python3|${PYTHON_BIN}|g" "$WEB_PLIST_DST"
+    chown "${REAL_USER}" "$WEB_PLIST_DST"
+    chmod 644 "$WEB_PLIST_DST"
+
+    sudo -u "$REAL_USER" launchctl load -w "$WEB_PLIST_DST" 2>/dev/null || true
+    sleep 1
+
+    if launchctl list 2>/dev/null | grep -q "$WEB_PLIST_LABEL" || \
+       sudo -u "$REAL_USER" launchctl list 2>/dev/null | grep -q "$WEB_PLIST_LABEL"; then
+        echo -e "${GREEN}  ✓ Web UI auto-start enabled (port 7070).${NC}"
+    else
+        echo -e "${YELLOW}  ⚠ Web LaunchAgent installed but may need login restart.${NC}"
+    fi
+else
+    echo -e "${YELLOW}  ⚠ Web plist not found. Web UI won't auto-start.${NC}"
+    echo -e "    Run 'forcefocus web' manually."
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}  ✓ ForcedFocus installed successfully!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
+echo -e "  ${BOLD}What starts automatically:${NC}"
+echo -e "    • Daemon (root)  — blocks sites at system level"
+echo -e "    • Web UI (user)  — http://localhost:7070"
+echo ""
 echo -e "  ${BOLD}Quick Start:${NC}"
 echo -e "    forcefocus start --duration 120   # Block for 2 hours"
 echo -e "    forcefocus status                 # Check session"
 echo -e "    forcefocus stop --key 'phrase'    # Unlock (20-min delay)"
-echo ""
-echo -e "  ${BOLD}Web UI:${NC}"
-echo -e "    forcefocus web                    # Start web UI"
-echo -e "    Open http://localhost:7070"
 echo ""
 echo -e "  ${BOLD}Logs:${NC}"
 echo -e "    tail -f /var/log/forcefocus.log"

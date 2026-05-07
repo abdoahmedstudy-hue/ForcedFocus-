@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForcedFocus</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <!-- Offline State -->
+    <div class="offline hidden" id="offline">
+        <div class="offline-icon">⚡</div>
+        <p>Web server not running</p>
+        <span>Start it with: <code>forcefocus web</code></span>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container" id="main">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon">⚡</div>
+                <span>ForcedFocus</span>
+            </div>
+            <div class="badge" id="badge">Idle</div>
+        </div>
+
+        <!-- Timer -->
+        <div class="timer-box" id="timerBox">
+            <div class="timer-ring">
+                <svg viewBox="0 0 120 120">
+                    <circle class="ring-bg" cx="60" cy="60" r="52"/>
+                    <circle class="ring-progress" id="ringProgress" cx="60" cy="60" r="52"/>
+                </svg>
+                <div class="timer-text">
+                    <div class="timer-value" id="timerValue">00:00</div>
+                    <div class="timer-label" id="timerLabel">READY</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Controls (idle) -->
+        <div class="controls" id="idleControls">
+            <div class="mode-row">
+                <button class="mode-chip active" data-mode="blacklist" id="chipBlacklist">🚫 Blacklist</button>
+                <button class="mode-chip" data-mode="whitelist" id="chipWhitelist">✅ Whitelist</button>
+            </div>
+            <div class="dur-row">
+                <button class="dur-chip" data-min="30">30m</button>
+                <button class="dur-chip" data-min="60">1h</button>
+                <button class="dur-chip active" data-min="120">2h</button>
+                <button class="dur-chip" data-min="240">4h</button>
+            </div>
+            <div class="custom-row">
+                <input type="number" id="customMin" min="1" max="1440" placeholder="Custom minutes">
+            </div>
+            <button class="btn-start" id="btnStart">▶ Start Blocking</button>
+        </div>
+
+        <!-- Active Controls -->
+        <div class="controls hidden" id="activeControls">
+            <div class="info-row">
+                <span class="info-label">Mode</span>
+                <span class="info-value" id="infoMode">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Expires</span>
+                <span class="info-value" id="infoExpires">—</span>
+            </div>
+            <div class="info-row" id="unlockRow" style="display:none">
+                <span class="info-label">Unlock at</span>
+                <span class="info-value unlock-val" id="infoUnlock">—</span>
+            </div>
+            <button class="btn-stop" id="btnStop">🔐 Request Unlock</button>
+        </div>
+
+        <!-- Stop Dialog -->
+        <div class="stop-dialog hidden" id="stopDialog">
+            <p>Enter kill-switch passphrase:</p>
+            <input type="password" id="passInput" placeholder="Passphrase" autocomplete="off">
+            <div class="dialog-btns">
+                <button class="dbtn dbtn-cancel" id="btnCancel">Cancel</button>
+                <button class="dbtn dbtn-confirm" id="btnConfirm">Unlock</button>
+            </div>
+            <p class="err hidden" id="errMsg"></p>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <a href="http://localhost:7070" target="_blank" id="openUI">Open Full UI ↗</a>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

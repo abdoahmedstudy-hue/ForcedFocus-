@@ -65,6 +65,24 @@ DEFAULT_BLOCKLIST = {
     ],
 }
 
+# DNS-over-HTTPS providers that browsers use to bypass /etc/hosts.
+# Blocking these forces Chrome/Firefox/etc back to system DNS.
+DOH_BLOCK_DOMAINS = [
+    "dns.google", "dns.google.com",
+    "dns64.dns.google",
+    "cloudflare-dns.com", "one.one.one.one",
+    "mozilla.cloudflare-dns.com",
+    "dns.quad9.net",
+    "doh.opendns.com",
+    "dns.nextdns.io",
+    "doh.cleanbrowsing.org",
+    "dns.adguard-dns.com",
+    "doh.dns.sb",
+    "dns.controld.com",
+    "freedns.controld.com",
+    "chrome.cloudflare-dns.com",
+]
+
 def setup_logging():
     logging.basicConfig(
         level=logging.INFO,
@@ -86,6 +104,9 @@ class ForcedFocusDaemon:
         self.pending_unlock_at: datetime | None = None
         self.hosts_hash: str | None = None
         self.original_dns: dict[str, str] = {}
+        self.whitelist_resolved: dict[str, list[str]] = {}
+        self.whitelist_count: int = 0
+        self.total_duration_seconds: int = 0
         self.lock = threading.Lock()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -119,7 +140,14 @@ class ForcedFocusDaemon:
             logging.warning("Caught %s — re-enforcing block.", name)
             with self.lock:
                 if self.active:
-                    self._enforce_block()
+                    if self.mode == "whitelist":
+                        try:
+                            data = json.loads(SESSION_LOCK.read_text())
+                            self._enforce_whitelist(data.get("whitelist_resolved", {}))
+                        except Exception as exc:
+                            logging.error("Whitelist re-enforce failed: %s", exc)
+                    else:
+                        self._enforce_block()
         signal.signal(signal.SIGTERM, _handler)
         signal.signal(signal.SIGINT, _handler)
         signal.signal(signal.SIGHUP, _handler)
@@ -190,9 +218,12 @@ class ForcedFocusDaemon:
         remaining = (expiry - datetime.now()).total_seconds()
         self.mode = data.get("mode", "blacklist")
         self.session_expiry = expiry
+        self.total_duration_seconds = data.get("duration_minutes", 120) * 60
         self.active = True
         if self.mode == "whitelist":
             self.original_dns = data.get("original_dns", {})
+            self.whitelist_resolved = data.get("whitelist_resolved", {})
+            self.whitelist_count = len(self.whitelist_resolved)
             self._enforce_whitelist_from_session(data)
         else:
             self.blocked_domains = self._get_blacklist_domains()
@@ -220,6 +251,7 @@ class ForcedFocusDaemon:
             self.session_expiry = expiry
             self.pending_unlock_at = None
             self.active = True
+            self.total_duration_seconds = duration_minutes * 60
 
             if mode == "whitelist":
                 self.original_dns = self._get_current_dns_servers()
@@ -229,7 +261,9 @@ class ForcedFocusDaemon:
                 session_data["whitelist_resolved"] = resolved
                 SESSION_LOCK.write_text(json.dumps(session_data))
                 self._enforce_whitelist(resolved)
+                self.whitelist_resolved = resolved
                 count = len(wl_domains)
+                self.whitelist_count = count
                 msg = f"Whitelist mode: {count} domains allowed for {duration_minutes} min."
             else:
                 self.blocked_domains = self._get_blacklist_domains()
@@ -280,7 +314,8 @@ class ForcedFocusDaemon:
                 "mode": self.mode,
                 "expires_at": self.session_expiry.strftime("%H:%M:%S"),
                 "remaining_seconds": int(rem),
-                "domains_count": len(self.blocked_domains) if self.mode == "blacklist" else len(self._load_lists().get("whitelist", [])),
+                "total_duration_seconds": self.total_duration_seconds,
+                "domains_count": len(self.blocked_domains) if self.mode == "blacklist" else self.whitelist_count,
                 "pending_unlock": self.pending_unlock_at.strftime("%H:%M:%S") if self.pending_unlock_at else None,
                 "pending_unlock_seconds": max(0, int((self.pending_unlock_at - datetime.now()).total_seconds())) if self.pending_unlock_at else None,
             }
@@ -323,20 +358,38 @@ class ForcedFocusDaemon:
         for domain in self.blocked_domains:
             lines.append(f"127.0.0.1\t{domain}")
             lines.append(f"::1\t\t{domain}")
+        # Block DNS-over-HTTPS providers to prevent browser bypass
+        lines.append("# DoH providers (anti-bypass)")
+        for domain in DOH_BLOCK_DOMAINS:
+            lines.append(f"127.0.0.1\t{domain}")
+            lines.append(f"::1\t\t{domain}")
         lines.append(MARKER_END)
         return "\n".join(lines)
 
     # ── Whitelist Enforcement ─────────────────────────────────────────────────
 
+    @staticmethod
+    def _get_network_services() -> list[str]:
+        """Get active network service names, skipping the header line."""
+        out = subprocess.run(
+            ["networksetup", "-listallnetworkservices"],
+            capture_output=True, text=True, timeout=5,
+        )
+        lines = out.stdout.strip().split("\n")
+        # First line is always the header: "An asterisk (*) denotes..."
+        # Skip it, then filter disabled services (marked with *)
+        services = []
+        for line in lines[1:]:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("*"):
+                services.append(stripped)
+        return services
+
     def _get_current_dns_servers(self) -> dict[str, str]:
         """Get current DNS servers for all network services."""
         result = {}
         try:
-            out = subprocess.run(
-                ["networksetup", "-listallnetworkservices"],
-                capture_output=True, text=True, timeout=5,
-            )
-            services = [l.strip() for l in out.stdout.strip().split("\n") if l.strip() and not l.startswith("*")]
+            services = self._get_network_services()
             for svc in services:
                 dns_out = subprocess.run(
                     ["networksetup", "-getdnsservers", svc],
@@ -401,11 +454,7 @@ class ForcedFocusDaemon:
     def _set_dns_to_localhost(self):
         """Redirect all network services' DNS to 127.0.0.1."""
         try:
-            out = subprocess.run(
-                ["networksetup", "-listallnetworkservices"],
-                capture_output=True, text=True, timeout=5,
-            )
-            services = [l.strip() for l in out.stdout.strip().split("\n") if l.strip() and not l.startswith("*")]
+            services = self._get_network_services()
             for svc in services:
                 subprocess.run(
                     ["networksetup", "-setdnsservers", svc, "127.0.0.1"],
@@ -420,11 +469,7 @@ class ForcedFocusDaemon:
         if not self.original_dns:
             # If no saved DNS, set to "empty" (use DHCP defaults)
             try:
-                out = subprocess.run(
-                    ["networksetup", "-listallnetworkservices"],
-                    capture_output=True, text=True, timeout=5,
-                )
-                services = [l.strip() for l in out.stdout.strip().split("\n") if l.strip() and not l.startswith("*")]
+                services = self._get_network_services()
                 for svc in services:
                     subprocess.run(["networksetup", "-setdnsservers", svc, "empty"], capture_output=True, timeout=5)
             except Exception as exc:
@@ -464,7 +509,6 @@ class ForcedFocusDaemon:
     def _cleanup_session(self):
         logging.info("Cleaning up session (mode=%s)...", self.mode)
         was_whitelist = self.mode == "whitelist"
-        self.active = False
 
         try:
             subprocess.run(["chflags", "nouchg", str(HOSTS_PATH)], capture_output=True, timeout=5)
@@ -477,23 +521,72 @@ class ForcedFocusDaemon:
             logging.error("cleanup_session error: %s", exc)
 
         SESSION_LOCK.unlink(missing_ok=True)
+        self.active = False
         self.hosts_hash = None
         self.session_expiry = None
         self.pending_unlock_at = None
         self.blocked_domains = []
         self.original_dns = {}
+        self.whitelist_resolved = {}
+        self.whitelist_count = 0
+        self.total_duration_seconds = 0
         self.mode = "blacklist"
         logging.info("Session ended. Hosts restored. DNS flushed.")
 
     @staticmethod
     def _flush_dns():
+        """Aggressive DNS flush — clears macOS cache and forces browsers to re-resolve."""
+        # Standard macOS flush
+        subprocess.run(["dscacheutil", "-flushcache"], capture_output=True, timeout=5)
+        subprocess.run(["killall", "-HUP", "mDNSResponder"], capture_output=True, timeout=5)
+        # Full mDNSResponder reset (clears all cached records)
+        subprocess.run(["killall", "-USR1", "mDNSResponder"], capture_output=True, timeout=5)
+        # Brief delay then flush again to catch any race conditions
+        time.sleep(0.5)
         subprocess.run(["dscacheutil", "-flushcache"], capture_output=True, timeout=5)
         subprocess.run(["killall", "-HUP", "mDNSResponder"], capture_output=True, timeout=5)
 
     # ── Watchdog ──────────────────────────────────────────────────────────────
 
+    def _persist_session_lock(self):
+        """Re-create session.lock from in-memory state."""
+        data = {
+            "started": (self.session_expiry - timedelta(seconds=self.total_duration_seconds)).isoformat(),
+            "expiry": self.session_expiry.isoformat(),
+            "duration_minutes": self.total_duration_seconds // 60,
+            "mode": self.mode,
+        }
+        if self.mode == "whitelist":
+            data["original_dns"] = self.original_dns
+            data["whitelist_resolved"] = self.whitelist_resolved
+        try:
+            SESSION_LOCK.write_text(json.dumps(data))
+            logging.info("session.lock re-created from memory.")
+        except Exception as exc:
+            logging.error("Failed to persist session.lock: %s", exc)
+
+    def _verify_dns_redirect(self):
+        """Whitelist mode: verify DNS still points to 127.0.0.1, re-enforce if tampered."""
+        try:
+            services = self._get_network_services()
+            for svc in services:
+                dns_out = subprocess.run(
+                    ["networksetup", "-getdnsservers", svc],
+                    capture_output=True, text=True, timeout=5,
+                )
+                current_dns = dns_out.stdout.strip()
+                if "127.0.0.1" not in current_dns and "aren't any" not in current_dns.lower():
+                    logging.warning("DNS TAMPER on '%s': '%s' — re-enforcing.", svc, current_dns)
+                    subprocess.run(
+                        ["networksetup", "-setdnsservers", svc, "127.0.0.1"],
+                        capture_output=True, timeout=5,
+                    )
+        except Exception as exc:
+            logging.error("DNS verify error: %s", exc)
+
     def _watchdog_loop(self):
         logging.info("Watchdog thread started (interval=%.0fms).", WATCHDOG_INTERVAL * 1000)
+        dns_check_counter = 0
         while True:
             time.sleep(WATCHDOG_INTERVAL)
             with self.lock:
@@ -508,19 +601,37 @@ class ForcedFocusDaemon:
                     logging.info("Delayed unlock period reached. Unlocking.")
                     self._cleanup_session()
                     continue
-                # Integrity check
+
+                # Integrity check: /etc/hosts
                 try:
                     current = HOSTS_PATH.read_text()
                     h = hashlib.sha256(current.encode()).hexdigest()
                     if h != self.hosts_hash:
-                        logging.warning("TAMPER DETECTED. Re-enforcing.")
+                        logging.warning("HOSTS TAMPER DETECTED. Re-enforcing.")
                         if self.mode == "whitelist":
                             data = json.loads(SESSION_LOCK.read_text())
                             self._enforce_whitelist(data.get("whitelist_resolved", {}))
                         else:
                             self._enforce_block()
                 except Exception as exc:
-                    logging.error("Watchdog error: %s", exc)
+                    logging.error("Watchdog hosts error: %s", exc)
+
+                # Integrity check: session.lock existence
+                if not SESSION_LOCK.exists():
+                    logging.warning("SESSION.LOCK DELETED. Re-creating from memory.")
+                    self._persist_session_lock()
+                    # Also re-enforce block since file was tampered
+                    if self.mode == "whitelist":
+                        self._enforce_whitelist(self.whitelist_resolved)
+                    else:
+                        self._enforce_block()
+
+                # Integrity check: DNS (whitelist mode, every ~2 seconds)
+                if self.mode == "whitelist":
+                    dns_check_counter += 1
+                    if dns_check_counter >= 8:  # 8 * 250ms = 2s
+                        dns_check_counter = 0
+                        self._verify_dns_redirect()
 
     # ── Passphrase ────────────────────────────────────────────────────────────
 
@@ -561,7 +672,6 @@ class ForcedFocusDaemon:
             try:
                 raw = conn.recv(8192).decode("utf-8").strip()
                 if not raw:
-                    conn.close()
                     continue
                 response = self._dispatch_command(raw)
                 conn.sendall(json.dumps(response).encode("utf-8"))

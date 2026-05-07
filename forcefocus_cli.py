@@ -40,8 +40,18 @@ def send_command(cmd: dict) -> dict:
         sock.settimeout(10)
         sock.connect(SOCK_PATH)
         sock.sendall(json.dumps(cmd).encode("utf-8"))
-        raw = sock.recv(8192).decode("utf-8")
+        # Receive full response (may span multiple packets)
+        chunks = []
+        while True:
+            try:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            except socket.timeout:
+                break
         sock.close()
+        raw = b''.join(chunks).decode("utf-8")
         return json.loads(raw)
     except ConnectionRefusedError:
         print("✗ Connection refused. Is the daemon running?", file=sys.stderr)
