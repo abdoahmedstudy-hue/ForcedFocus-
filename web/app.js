@@ -465,6 +465,7 @@ function renderDomainList(container, domains, listName) {
         removeBtn.dataset.list = listName;
         removeBtn.dataset.domain = domain;
         removeBtn.textContent = '✕';
+        removeBtn.setAttribute('aria-label', `Remove ${domain}`);
         removeBtn.addEventListener('click', async () => {
             const res = await api('DELETE', `/api/lists/${listName}/${domain}`);
             if (res.status === 'ok') {
