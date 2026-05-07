@@ -29,10 +29,17 @@ const els = {
     timerProgress:    $('#timerProgress'),
     timerValue:       $('#timerValue'),
     timerLabel:       $('#timerLabel'),
+    pomoStatus:       $('#pomoStatus'),
+    pomoPhase:        $('#pomoPhase'),
+    pomoCycleDisplay: $('#pomoCycleDisplay'),
+    pomoNextTimeDisplay: $('#pomoNextTimeDisplay'),
     modeDisplay:      $('#modeDisplay'),
     expiresDisplay:   $('#expiresDisplay'),
     modeCard:         $('#modeCard'),
-    durationCard:     $('#durationCard'),
+    sessionSettingsCard: $('#sessionSettingsCard'),
+    sessionSettingsTitle: $('#sessionSettingsTitle'),
+    standardSettingsArea: $('#standardSettingsArea'),
+    pomodoroSettingsArea: $('#pomodoroSettingsArea'),
     btnStart:         $('#btnStart'),
     btnStop:          $('#btnStop'),
     unlockInfo:       $('#unlockInfo'),
@@ -47,8 +54,6 @@ const els = {
     modalError:       $('#modalError'),
     toast:            $('#toast'),
     customMinutes:    $('#customMinutes'),
-    sessionTypeCard:  $('#sessionTypeCard'),
-    pomodoroCard:     $('#pomodoroCard'),
     pomoFocus:        $('#pomoFocus'),
     pomoBreak:        $('#pomoBreak'),
     pomoCycles:       $('#pomoCycles'),
@@ -64,6 +69,9 @@ const els = {
     upcomingSchedulesCard: $('#upcomingSchedulesCard'),
     upcomingSchedulesList: $('#upcomingSchedulesList'),
     upcomingSchedulesCount:$('#upcomingSchedulesCount'),
+    rescueCard:       $('#rescueCard'),
+    rescueDuration:   $('#rescueDuration'),
+    btnRescue:        $('#btnRescue'),
 };
 
 // ── API Helpers ──────────────────────────────────────────────────────────────
@@ -161,10 +169,9 @@ function setActiveUI(status) {
 
     // Mode & duration cards
     els.modeCard.classList.toggle('disabled', isFullyActive);
-    els.durationCard.classList.toggle('disabled', isFullyActive);
-    els.sessionTypeCard.classList.toggle('disabled', isFullyActive);
-    els.pomodoroCard.classList.toggle('disabled', isFullyActive);
+    els.sessionSettingsCard.classList.toggle('disabled', isFullyActive);
     els.scheduleCard.classList.toggle('disabled', isFullyActive);
+    els.rescueCard.classList.toggle('disabled', isFullyActive);
 
     // Start/stop buttons
     els.btnStart.classList.toggle('hidden', isFullyActive);
@@ -233,7 +240,11 @@ function setActiveUI(status) {
 
     // Mode & expires info
     if (active) {
-        els.modeDisplay.textContent = `Mode: ${status.mode}`;
+        if (status.session_type === 'rescue') {
+            els.modeDisplay.textContent = `Mode: Rescue Throne 🛡️`;
+        } else {
+            els.modeDisplay.textContent = `Mode: ${status.mode}`;
+        }
         els.expiresDisplay.textContent = `Expires: ${status.expires_at}`;
         
         if (status.session_type === 'pomodoro') {
@@ -241,6 +252,14 @@ function setActiveUI(status) {
             els.pomoPhase.textContent = status.pomo_phase.toUpperCase();
             els.pomoPhase.className = `pomo-phase-badge ${status.pomo_phase}`;
             els.pomoCycleDisplay.textContent = `Cycle ${status.pomo_current_cycle}/${status.pomo_total_cycles}`;
+            
+            if (status.pomo_phase_expiry_time) {
+                const nextType = status.pomo_phase === 'focus' ? 'break' : 'focus';
+                els.pomoNextTimeDisplay.textContent = `Next ${nextType} at ${status.pomo_phase_expiry_time}`;
+                els.pomoNextTimeDisplay.style.display = 'block';
+            } else {
+                els.pomoNextTimeDisplay.style.display = 'none';
+            }
             
             // Timer ring color
             if (status.pomo_phase === 'break') {
@@ -384,12 +403,14 @@ function initEvents() {
             btn.classList.add('active');
             sessionType = btn.dataset.type;
             if (sessionType === 'pomodoro') {
-                els.durationCard.classList.add('hidden');
-                els.pomodoroCard.classList.remove('hidden');
+                els.standardSettingsArea.classList.add('hidden');
+                els.pomodoroSettingsArea.classList.remove('hidden');
+                els.sessionSettingsTitle.textContent = '🍅 Pomodoro Settings';
                 updatePomoSummary();
             } else {
-                els.durationCard.classList.remove('hidden');
-                els.pomodoroCard.classList.add('hidden');
+                els.standardSettingsArea.classList.remove('hidden');
+                els.pomodoroSettingsArea.classList.add('hidden');
+                els.sessionSettingsTitle.textContent = 'Session Duration';
             }
         });
     });
@@ -474,6 +495,25 @@ function initEvents() {
             refreshStatus();
         } else {
             showToast(res.message || 'Failed to start session.');
+        }
+    });
+
+    // Rescue button
+    els.btnRescue.addEventListener('click', async () => {
+        const duration = parseInt(els.rescueDuration.value, 10) || 10;
+        const payload = {
+            duration: duration,
+            mode: 'whitelist',
+            session_type: 'rescue'
+        };
+        els.btnRescue.textContent = '⏳ Activating...';
+        const res = await api('POST', '/api/start', payload);
+        els.btnRescue.innerHTML = '<span class="btn-icon">⚡</span> Activate Rescue';
+        if (res.status === 'ok') {
+            showToast(res.message);
+            refreshStatus();
+        } else {
+            showToast(res.message || 'Failed to activate Rescue Throne.');
         }
     });
 

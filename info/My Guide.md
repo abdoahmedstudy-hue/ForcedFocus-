@@ -81,13 +81,13 @@ Here is a comprehensive breakdown of every file in the project, its function, ho
 
 #### 8. `web/index.html`
 *   **Function**: The main dashboard UI.
-*   **Logic**: Contains the HTML structure for the countdown timer (SVG ring), mode toggles, Pomodoro settings, list management (Blacklist/Whitelist textareas), and the unlock modal.
-*   **How to modify**: Add new UI sections here. Use specific IDs for JavaScript interaction.
+*   **Logic**: Contains the HTML structure for the countdown timer (SVG ring), mode toggles, Pomodoro settings, list management (Blacklist/Whitelist textareas), and the unlock modal. It is structured into a `.dashboard-layout` featuring a sticky `.dashboard-sidebar` and a bento-box `.dashboard-main` grid.
+*   **How to modify**: Add new UI sections here. Use specific IDs for JavaScript interaction and ensure they fit into the main grid layout.
 
 #### 9. `web/styles.css`
 *   **Function**: Styling for the Web UI.
-*   **Logic**: Uses a modern "Dark Glassmorphism" aesthetic with CSS variables for colors, static gradient background orbs, and responsive grid layouts.
-*   **How to modify**: Update CSS variables at the `:root` to change the color scheme. 
+*   **Logic**: Uses an elegant "Dark Glassmorphism" aesthetic with circular elements (using 28px/24px/20px border radii), glowing gradient background orbs (`body::before`/`body::after`), and a fully responsive bento-box grid that collapses to a single column on mobile.
+*   **How to modify**: Update CSS variables at the `:root` to change the color scheme, shadow intensity, or standard radii.
 
 #### 10. `web/app.js`
 *   **Function**: Client-side logic for the Web UI.
@@ -115,12 +115,12 @@ Here is a comprehensive breakdown of every file in the project, its function, ho
 
 #### 13. `popup.html` & `popup.css` & `popup.js`
 *   **Function**: The mini-UI that appears when clicking the extension icon.
-*   **Logic**: A condensed version of `web/app.js` and `index.html`. It allows starting standard or Pomodoro sessions and requesting unlocks directly from the browser popup. Checks `checkServer()` on load to show an offline message if the daemon isn't running.
+*   **Logic**: A condensed, 350px-wide version of the main web app that shares the exact same dark glassmorphism and fully circular (28px) UI aesthetic. It allows starting standard or Pomodoro sessions and requesting unlocks directly from the browser popup. Checks `checkServer()` on load to show an offline message if the daemon isn't running.
 *   **How to modify**: Similar to the main web app; update HTML for layout, CSS for styles, and JS for API interaction and state rendering.
 
 #### 14. `blocked.html`
 *   **Function**: The landing page shown when a site is blocked.
-*   **Logic**: A visually appealing, static HTML page that parses the URL query parameter `?domain=...` via inline JS to tell the user which site was blocked.
+*   **Logic**: A visually appealing, static HTML page that exactly matches the ForcedFocus dark glassmorphism aesthetic (complete with gradient orbs and a 28px rounded container). It parses the URL query parameter `?domain=...` via inline JS to tell the user which site was blocked.
 *   **How to modify**: Update the inline CSS or HTML to change the messaging or aesthetics of the block page.
 
 ---

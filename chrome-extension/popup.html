@@ -85,6 +85,19 @@
                 </div>
                 <div class="pomo-total" id="pomoTotal">Total: 2h 00m</div>
             </div>
+
+            <div class="rescue-box" style="margin-bottom: 12px; padding: 10px; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--r);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 12px; font-weight: 600; color: var(--red);">🛡️ Rescue Throne</span>
+                    <select id="rescueDuration" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text); border-radius: var(--rxs); padding: 2px 6px; font-size: 11px; outline: none; cursor: pointer;">
+                        <option value="5" style="background: var(--bg2);">5 min</option>
+                        <option value="10" selected style="background: var(--bg2);">10 min</option>
+                        <option value="30" style="background: var(--bg2);">30 min</option>
+                    </select>
+                </div>
+                <button class="btn-rescue" id="btnRescue">⚡ Activate Rescue</button>
+            </div>
+
             <button class="btn-start" id="btnStart">▶ Start Blocking</button>
         </div>
 
@@ -105,6 +118,10 @@
             <div class="info-row" id="pomoCycleRow" style="display:none">
                 <span class="info-label">Cycle</span>
                 <span class="info-value" id="infoCycle">—</span>
+            </div>
+            <div class="info-row" id="pomoNextRow" style="display:none">
+                <span class="info-label">Next Phase</span>
+                <span class="info-value" id="infoPomoNext">—</span>
             </div>
             <div class="info-row">
                 <span class="info-label">Expires</span>

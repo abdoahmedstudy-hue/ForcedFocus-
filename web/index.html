@@ -12,8 +12,10 @@
 </head>
 <body>
     <div class="app">
-        <!-- Header -->
-        <header class="header">
+        <div class="dashboard-layout">
+            <div class="dashboard-sidebar">
+                <!-- Header -->
+                <header class="header">
             <div class="logo">
                 <div class="logo-icon">⚡</div>
                 <div>
@@ -43,14 +45,19 @@
                 <span id="modeDisplay">—</span>
                 <span id="expiresDisplay">—</span>
                 <div class="pomo-status hidden" id="pomoStatus">
-                    <span class="pomo-phase-badge focus" id="pomoPhase">FOCUS</span>
-                    <span id="pomoCycleDisplay">Cycle 1/4</span>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <span class="pomo-phase-badge focus" id="pomoPhase">FOCUS</span>
+                        <span id="pomoCycleDisplay">Cycle 1/4</span>
+                    </div>
+                    <span id="pomoNextTimeDisplay" style="font-size: 13px; color: var(--text-muted); margin-top: 4px; display: none;">Next break at 1:25 PM</span>
                 </div>
             </div>
         </section>
+            </div>
 
-        <!-- Controls -->
-        <section class="controls-section">
+            <div class="dashboard-main">
+                <!-- Controls -->
+                <section class="controls-section">
             <!-- Mode Selector -->
             <div class="card" id="modeCard">
                 <h2 class="card-title">Blocking Mode</h2>
@@ -68,43 +75,65 @@
                 </div>
             </div>
 
-            <!-- Session Type -->
-            <div class="card" id="sessionTypeCard">
-                <h2 class="card-title">Session Type</h2>
-                <div class="mode-toggle">
-                    <button class="mode-btn session-type-btn active" data-type="standard">
-                        <span class="mode-icon">⏱</span>
-                        <span class="mode-name">Standard</span>
-                        <span class="mode-desc">Continuous blocking</span>
-                    </button>
-                    <button class="mode-btn session-type-btn" data-type="pomodoro">
-                        <span class="mode-icon">🍅</span>
-                        <span class="mode-name">Pomodoro</span>
-                        <span class="mode-desc">Focus + break cycles</span>
-                    </button>
+            <!-- Unified Session Settings -->
+            <div class="card" id="sessionSettingsCard">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2 class="card-title" id="sessionSettingsTitle" style="margin-bottom: 0;">Session Duration</h2>
+                    
+                    <div style="display: flex; gap: 4px; padding: 4px; background: rgba(255,255,255,0.02); border-radius: 20px; border: 1px solid var(--border);">
+                        <button class="session-type-btn active" data-type="standard" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 16px; border: none; background: transparent; cursor: pointer; color: var(--text-secondary); font-family: inherit; font-size: 12px; font-weight: 600; transition: var(--transition);">
+                            <span>⏱</span> Standard
+                        </button>
+                        <button class="session-type-btn" data-type="pomodoro" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 16px; border: none; background: transparent; cursor: pointer; color: var(--text-secondary); font-family: inherit; font-size: 12px; font-weight: 600; transition: var(--transition);">
+                            <span>🍅</span> Pomodoro
+                        </button>
+                    </div>
                 </div>
-            </div>
 
-            <!-- Duration -->
-            <div class="card" id="durationCard">
-                <h2 class="card-title">Session Duration</h2>
-                <div class="duration-grid">
-                    <button class="dur-btn" data-minutes="30">30m</button>
-                    <button class="dur-btn" data-minutes="60">1h</button>
-                    <button class="dur-btn active" data-minutes="120">2h</button>
-                    <button class="dur-btn" data-minutes="180">3h</button>
-                    <button class="dur-btn" data-minutes="240">4h</button>
-                    <button class="dur-btn" data-minutes="480">8h</button>
+                <!-- Standard Duration Controls -->
+                <div id="standardSettingsArea">
+                    <div class="duration-grid">
+                        <button class="dur-btn" data-minutes="30">30m</button>
+                        <button class="dur-btn" data-minutes="60">1h</button>
+                        <button class="dur-btn active" data-minutes="120">2h</button>
+                        <button class="dur-btn" data-minutes="180">3h</button>
+                        <button class="dur-btn" data-minutes="240">4h</button>
+                        <button class="dur-btn" data-minutes="480">8h</button>
+                    </div>
+                    <div class="custom-duration">
+                        <input type="number" id="customMinutes" min="1" max="1440" placeholder="Custom (min)">
+                    </div>
                 </div>
-                <div class="custom-duration">
-                    <input type="number" id="customMinutes" min="1" max="1440" placeholder="Custom (min)">
+
+                <!-- Pomodoro Controls -->
+                <div id="pomodoroSettingsArea" class="hidden">
+                    <div class="pomo-presets">
+                        <button class="dur-btn active pomo-preset" data-focus="25" data-break="5">25/5</button>
+                        <button class="dur-btn pomo-preset" data-focus="50" data-break="10">50/10</button>
+                        <button class="dur-btn pomo-preset" data-focus="90" data-break="20">90/20</button>
+                    </div>
+                    <div class="pomo-custom">
+                        <div class="pomo-field">
+                            <label>Focus (min)</label>
+                            <input type="number" id="pomoFocus" min="1" max="240" value="25">
+                        </div>
+                        <div class="pomo-field">
+                            <label>Break (min)</label>
+                            <input type="number" id="pomoBreak" min="1" max="60" value="5">
+                        </div>
+                        <div class="pomo-field">
+                            <label>Cycles</label>
+                            <input type="number" id="pomoCycles" min="1" max="50" value="4">
+                        </div>
+                    </div>
+                    <p class="pomo-summary" id="pomoSummary">Total: 2h 00m (4 × 25m focus + 5m break)</p>
                 </div>
             </div>
 
             <!-- Scheduling -->
             <div class="card" id="scheduleCard">
                 <h2 class="card-title">Schedule</h2>
-                <div class="mode-toggle" style="margin-bottom: 12px;">
+                <div class="mode-toggle schedule-toggle" style="margin-bottom: 12px;">
                     <button class="mode-btn schedule-type-btn active" data-type="now">
                         <span class="mode-icon">⚡</span>
                         <span class="mode-name">Now</span>
@@ -130,29 +159,20 @@
                 </div>
             </div>
 
-            <!-- Pomodoro Config (hidden by default) -->
-            <div class="card hidden" id="pomodoroCard">
-                <h2 class="card-title">🍅 Pomodoro Settings</h2>
-                <div class="pomo-presets">
-                    <button class="dur-btn active pomo-preset" data-focus="25" data-break="5">25/5</button>
-                    <button class="dur-btn pomo-preset" data-focus="50" data-break="10">50/10</button>
-                    <button class="dur-btn pomo-preset" data-focus="90" data-break="20">90/20</button>
+            <!-- Rescue Throne -->
+            <div class="card rescue-card" id="rescueCard">
+                <div class="rescue-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <h2 class="card-title" style="margin-bottom: 0;">🛡️ Rescue Throne</h2>
+                    <select id="rescueDuration" class="rescue-select" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary); padding: 4px 8px; border-radius: var(--radius-xs); font-family: inherit; font-size: 13px; outline: none; cursor: pointer;">
+                        <option value="5" style="background: var(--bg-secondary);">5 min</option>
+                        <option value="10" selected style="background: var(--bg-secondary);">10 min</option>
+                        <option value="30" style="background: var(--bg-secondary);">30 min</option>
+                    </select>
                 </div>
-                <div class="pomo-custom">
-                    <div class="pomo-field">
-                        <label>Focus (min)</label>
-                        <input type="number" id="pomoFocus" min="1" max="240" value="25">
-                    </div>
-                    <div class="pomo-field">
-                        <label>Break (min)</label>
-                        <input type="number" id="pomoBreak" min="1" max="60" value="5">
-                    </div>
-                    <div class="pomo-field">
-                        <label>Cycles</label>
-                        <input type="number" id="pomoCycles" min="1" max="50" value="4">
-                    </div>
-                </div>
-                <p class="pomo-summary" id="pomoSummary">Total: 2h 00m (4 × 25m focus + 5m break)</p>
+                <p class="rescue-desc" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">Emergency lockdown. Blocks <strong>all</strong> websites without exception.</p>
+                <button class="btn btn-rescue" id="btnRescue" style="width: 100%; padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius); color: var(--danger); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: var(--transition); box-shadow: 0 4px 16px rgba(239, 68, 68, 0.1);">
+                    <span class="btn-icon">⚡</span> Activate Rescue
+                </button>
             </div>
 
             <!-- Start/Stop -->
@@ -214,6 +234,8 @@
                 <ul class="domain-list" id="whitelistDomains"></ul>
             </div>
         </section>
+            </div>
+        </div>
 
         <!-- Stop Modal -->
         <div class="modal-overlay hidden" id="stopModal">

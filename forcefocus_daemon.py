@@ -656,7 +656,10 @@ class ForcedFocusDaemon:
 
             if mode == "whitelist":
                 self.original_dns = self._get_current_dns_servers()
-                wl_domains = self._load_lists().get("whitelist", [])
+                if self.session_type == "rescue":
+                    wl_domains = []
+                else:
+                    wl_domains = self._load_lists().get("whitelist", [])
                 self.blocked_domains = wl_domains  # Used by DNS proxy as allow-list
                 session_data["blocked_domains"] = self.blocked_domains
                 session_data["original_dns"] = self.original_dns
@@ -666,6 +669,8 @@ class ForcedFocusDaemon:
                 self.whitelist_count = count
                 if self.session_type == "pomodoro":
                     msg = f"Pomodoro (Whitelist): {count} domains allowed for {self.pomo_total_cycles} cycles."
+                elif self.session_type == "rescue":
+                    msg = f"Rescue Throne activated: All sites blocked for {duration_minutes} min."
                 else:
                     msg = f"Whitelist mode: {count} domains allowed for {duration_minutes} min."
             else:
@@ -769,6 +774,9 @@ class ForcedFocusDaemon:
                 result["pomo_total_cycles"] = self.pomo_total_cycles
                 result["pomo_focus_minutes"] = self.pomo_focus_minutes
                 result["pomo_break_minutes"] = self.pomo_break_minutes
+                if self.pomo_phase_expiry:
+                    time_str = self.pomo_phase_expiry.strftime("%I:%M %p").lstrip("0")
+                    result["pomo_phase_expiry_time"] = time_str
                 if self._mono_pomo_phase_end > 0:
                     phase_rem = int(max(0, self._mono_pomo_phase_end - now_mono))
                     result["pomo_phase_remaining"] = phase_rem
