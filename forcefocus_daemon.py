@@ -9,6 +9,7 @@ Supports blacklist mode (block listed sites) and whitelist mode
 import os
 import sys
 import json
+import base64
 import time
 import signal
 import socket
@@ -42,6 +43,17 @@ HOSTS_PATH        = Path("/private/etc/hosts")
 WEB_HOST          = "127.0.0.1"
 WEB_PORT          = 7070
 WEB_DIR           = Path("/usr/local/share/forcefocus/web")
+SETTINGS_FILE     = CONFIG_DIR / "settings.json"
+
+DEFAULT_SETTINGS = {
+    "sound_start": "Start Blocking.mp3",
+    "sound_rescue": "Rescue Mode.mp3",
+    "sound_unlock": "Request Unlock .mp3",
+    "sound_break": "Break Time.mp3",
+    "sound_end": "Session End .mp3",
+    "sound_scheduled": "Scheduled meeting.mp3",
+    "sound_blocked": "Blocked site open.mp3"
+}
 
 MARKER_BEGIN      = "# ──── BEGIN FORCEFOCUS ────"
 MARKER_END        = "# ──── END FORCEFOCUS ────"
@@ -94,6 +106,15 @@ DOH_BLOCK_DOMAINS = [
     "dns.controld.com",
     "freedns.controld.com",
     "chrome.cloudflare-dns.com",
+    "mask.icloud.com",
+    "mask-h2.icloud.com",
+    "mask-api.icloud.com",
+    "dns.google.com",
+    "dns.tuna.tsinghua.edu.cn",
+    "doh.pub",
+    "dot.pub",
+    "dns.alidns.com",
+    "doh.360.cn",
 ]
 
 def setup_logging():
@@ -128,18 +149,38 @@ class LocalDNSProxy(threading.Thread):
     def _bind_with_retry(self, max_attempts=10, initial_delay=1.0):
         """Retry binding to port 53 with exponential backoff for boot race."""
         delay = initial_delay
+        temp_socks = []
         for attempt in range(max_attempts):
             try:
-                self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                self.sock.bind(("127.0.0.1", 53))
+                self.socks = []
+                temp_socks = []
+                # IPv4
+                s4 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s4.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                temp_socks.append(s4)
+                s4.bind(("127.0.0.1", 53))
+                self.socks.append(s4)
+                # IPv6
+                try:
+                    s6 = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+                    s6.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    temp_socks.append(s6)
+                    s6.bind(("::1", 53))
+                    self.socks.append(s6)
+                except Exception as exc:
+                    logging.warning("IPv6 DNS Proxy bind failed (non-critical): %s", exc)
+                
                 logging.info("DNS Proxy bound to port 53 (attempt %d).", attempt + 1)
                 return True
             except OSError as exc:
                 logging.warning("DNS Proxy bind failed (attempt %d/%d): %s", 
                               attempt + 1, max_attempts, exc)
-                if self.sock:
-                    self.sock.close()
+                # Clean up any opened sockets from this attempt
+                for s in temp_socks:
+                    try:
+                        s.close()
+                    except:
+                        pass
                 time.sleep(delay)
                 delay = min(delay * 2, 10.0)
         logging.error("DNS Proxy: exhausted all bind attempts.")
@@ -150,24 +191,33 @@ class LocalDNSProxy(threading.Thread):
             self.active = False
             return
             
-        logging.info("DNS Proxy listening on 127.0.0.1:53")
+        logging.info("DNS Proxy listening on 127.0.0.1:53 and ::1:53")
         while self.active:
             try:
-                r, _, _ = select.select([self.sock], [], [], 1.0)
-                if not r:
+                # Ensure sockets are still open before select
+                valid_socks = [s for s in self.socks if s.fileno() != -1]
+                if not valid_socks:
+                    break
+                r, _, _ = select.select(valid_socks, [], [], 1.0)
+                if not r or not self.active:
                     continue
-                data, addr = self.sock.recvfrom(4096)
-                if not data:
-                    continue
-                self._handle_query(data, addr)
+                for s in r:
+                    try:
+                        data, addr = s.recvfrom(4096)
+                        if not data:
+                            continue
+                        self._handle_query(data, addr, s)
+                    except (OSError, ValueError):
+                        continue
             except Exception as exc:
-                logging.error("DNS Proxy loop error: %s", exc)
+                if self.active: # Only log if we didn't intend to stop
+                    logging.error("DNS Proxy loop error: %s", exc)
 
     def stop(self):
         self.active = False
         try:
-            if self.sock:
-                self.sock.close()
+            for s in getattr(self, "socks", []):
+                s.close()
         except:
             pass
 
@@ -197,7 +247,7 @@ class LocalDNSProxy(threading.Thread):
         except Exception:
             return b''
 
-    def _handle_query(self, data: bytes, addr):
+    def _handle_query(self, data: bytes, addr, sock):
         domain = self._extract_domain(data)
         if not domain:
             return
@@ -213,17 +263,18 @@ class LocalDNSProxy(threading.Thread):
 
         if allowed:
             try:
+                # Use appropriate socket family for upstream if needed, but usually v4 is fine for forwarding
                 fw = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 fw.settimeout(2.0)
                 fw.sendto(data, (self.upstream_dns, 53))
                 resp, _ = fw.recvfrom(4096)
-                self.sock.sendto(resp, addr)
+                sock.sendto(resp, addr)
             except Exception:
                 pass
         else:
             resp = self._make_nxdomain(data)
             if resp:
-                self.sock.sendto(resp, addr)
+                sock.sendto(resp, addr)
 
 class ForcedFocusDaemon:
     def __init__(self):
@@ -254,6 +305,7 @@ class ForcedFocusDaemon:
         self._mono_pomo_phase_end: float = 0.0
         self._reenforce_flag = False  # Set by signal handler, handled by watchdog
         self.schedules: list = []
+        self.settings = self._load_settings()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -638,6 +690,7 @@ class ForcedFocusDaemon:
                 "pomo_current_cycle": self.pomo_current_cycle,
                 "pomo_phase": self.pomo_phase,
                 "pomo_phase_expiry": self.pomo_phase_expiry.isoformat() if self.pomo_phase_expiry else None,
+                "settings": self.settings,
                 "mono_elapsed": 0.0,
                 "last_persist_wall": datetime.now().isoformat(),
                 "schedules": [
@@ -791,11 +844,25 @@ class ForcedFocusDaemon:
         if bl:
             expanded = set()
             for d in bl:
-                expanded.add(d)
+                domain = d.strip().lower()
+                # Auto-append .com if no TLD present (user shortcut)
+                if "." not in domain:
+                    domain += ".com"
+                
+                expanded.add(domain)
+                
+                # Special case: YouTube needs aggressive asset blocking
+                if "youtube.com" in domain or "youtu.be" in domain:
+                    for asset in ["googlevideo.com", "ytimg.com", "ggpht.com"]:
+                        expanded.add(asset)
+                        for prefix in ["www.", "r1---", "r2---", "r3---", "r4---", "r5---"]:
+                            expanded.add(prefix + asset)
+
                 # Expand with common subdomain prefixes for broader /etc/hosts coverage
-                for prefix in ["www.", "m.", "api.", "cdn.", "static.", "app.", "mail.", "login.", "accounts."]:
-                    if not d.startswith(prefix):
-                        expanded.add(prefix + d)
+                for prefix in ["www.", "m.", "api.", "cdn.", "static.", "app.", "mail.", "login.", "accounts.", 
+                               "mobile.", "touch.", "new.", "dev.", "assets.", "cdn1.", "cdn2.", "v.", "video."]:
+                    if not domain.startswith(prefix):
+                        expanded.add(prefix + domain)
             return sorted(expanded)
         # Fallback to hard-coded default
         domains = []
@@ -806,12 +873,21 @@ class ForcedFocusDaemon:
     def _enforce_block(self):
         """Blacklist mode: inject 127.0.0.1 entries into /etc/hosts."""
         try:
-            subprocess.run(["chflags", "nouchg", str(HOSTS_PATH)], capture_output=True, timeout=5)
+            result = subprocess.run(["chflags", "nouchg", str(HOSTS_PATH)], capture_output=True, timeout=5)
+            if result.returncode != 0:
+                logging.warning("chflags nouchg failed with code %d: %s", result.returncode, result.stderr.decode() if result.stderr else "unknown error")
+            
             content = self._strip_block(HOSTS_PATH.read_text())
             block = self._build_blacklist_block()
             content = content.rstrip("\n") + "\n\n" + block + "\n"
             HOSTS_PATH.write_text(content)
-            subprocess.run(["chflags", "uchg", str(HOSTS_PATH)], capture_output=True, timeout=5)
+            
+            result = subprocess.run(["chflags", "uchg", str(HOSTS_PATH)], capture_output=True, timeout=5)
+            if result.returncode != 0:
+                logging.warning("chflags uchg failed with code %d: %s", result.returncode, result.stderr.decode() if result.stderr else "unknown error")
+                
+            self._enforce_firewall(True)
+            self._clear_browser_caches()
             self._flush_dns()
             self.hosts_hash = hashlib.sha256(content.encode()).hexdigest()
         except Exception as exc:
@@ -839,18 +915,26 @@ class ForcedFocusDaemon:
         We include *-prefixed services because they can become active
         mid-session (e.g., plugging in Ethernet).
         """
-        out = subprocess.run(
-            ["networksetup", "-listallnetworkservices"],
-            capture_output=True, text=True, timeout=5,
-        )
-        lines = out.stdout.strip().split("\n")
-        # First line is always the header: "An asterisk (*) denotes..."
-        services = []
-        for line in lines[1:]:
-            stripped = line.strip().lstrip("*").strip()
-            if stripped:
-                services.append(stripped)
-        return services
+        try:
+            out = subprocess.run(
+                ["networksetup", "-listallnetworkservices"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if out.returncode != 0:
+                logging.error("networksetup failed with code %d: %s", out.returncode, out.stderr)
+                return []
+                
+            lines = out.stdout.strip().split("\n")
+            # First line is always the header: "An asterisk (*) denotes..."
+            services = []
+            for line in lines[1:]:
+                stripped = line.strip().lstrip("*").strip()
+                if stripped:
+                    services.append(stripped)
+            return services
+        except Exception as exc:
+            logging.error("Failed to get network services: %s", exc)
+            return []
 
     def _get_current_dns_servers(self) -> dict[str, str]:
         """Get current DNS servers for all network services."""
@@ -877,6 +961,8 @@ class ForcedFocusDaemon:
             self._set_dns_to_localhost()
             # M4: Block DoH providers in /etc/hosts for whitelist mode too
             self._enforce_doh_block()
+            self._enforce_firewall(True)
+            self._clear_browser_caches()
             self._flush_dns()
             logging.info("Whitelist enforced via Local DNS Proxy.")
         except Exception as exc:
@@ -904,40 +990,57 @@ class ForcedFocusDaemon:
 
 
     def _set_dns_to_localhost(self):
-        """Redirect all network services' DNS to 127.0.0.1."""
+        """Redirect all network services' DNS to 127.0.0.1 and ::1."""
         try:
             services = self._get_network_services()
+            success_count = 0
             for svc in services:
-                subprocess.run(
-                    ["networksetup", "-setdnsservers", svc, "127.0.0.1"],
+                result = subprocess.run(
+                    ["networksetup", "-setdnsservers", svc, "127.0.0.1", "::1"],
                     capture_output=True, timeout=5,
                 )
-            logging.info("DNS redirected to 127.0.0.1 for %d services.", len(services))
+                if result.returncode == 0:
+                    success_count += 1
+                else:
+                    logging.warning("Failed to set DNS for service '%s': %s", svc, result.stderr.decode() if result.stderr else "unknown error")
+            logging.info("DNS redirected to 127.0.0.1 and ::1 for %d/%d services.", success_count, len(services))
         except Exception as exc:
             logging.error("Failed to redirect DNS: %s", exc)
 
     def _restore_dns(self):
         """Restore original DNS servers from saved state."""
-        if not self.original_dns:
-            # If no saved DNS, set to "empty" (use DHCP defaults)
-            try:
+        try:
+            if not self.original_dns:
+                # If no saved DNS, set to "empty" (use DHCP defaults)
                 services = self._get_network_services()
+                success_count = 0
                 for svc in services:
-                    subprocess.run(["networksetup", "-setdnsservers", svc, "empty"], capture_output=True, timeout=5)
-            except Exception as exc:
-                logging.error("Failed to reset DNS: %s", exc)
-            return
+                    result = subprocess.run(["networksetup", "-setdnsservers", svc, "empty"], capture_output=True, timeout=5)
+                    if result.returncode == 0:
+                        success_count += 1
+                    else:
+                        logging.warning("Failed to reset DNS for service '%s': %s", svc, result.stderr.decode() if result.stderr else "unknown error")
+                logging.info("Reset DNS to defaults for %d/%d services.", success_count, len(services))
+                return
 
-        for svc, dns_str in self.original_dns.items():
-            try:
-                if "There aren't any DNS Servers" in dns_str or not dns_str.strip():
-                    subprocess.run(["networksetup", "-setdnsservers", svc, "empty"], capture_output=True, timeout=5)
-                else:
-                    servers = dns_str.strip().split("\n")
-                    subprocess.run(["networksetup", "-setdnsservers", svc] + servers, capture_output=True, timeout=5)
-            except Exception as exc:
-                logging.error("Failed to restore DNS for %s: %s", svc, exc)
-        logging.info("DNS servers restored.")
+            success_count = 0
+            for svc, dns_str in self.original_dns.items():
+                try:
+                    if "There aren't any DNS Servers" in dns_str or not dns_str.strip():
+                        result = subprocess.run(["networksetup", "-setdnsservers", svc, "empty"], capture_output=True, timeout=5)
+                    else:
+                        servers = dns_str.strip().split("\n")
+                        result = subprocess.run(["networksetup", "-setdnsservers", svc] + servers, capture_output=True, timeout=5)
+                    
+                    if result.returncode == 0:
+                        success_count += 1
+                    else:
+                        logging.warning("Failed to restore DNS for service '%s': %s", svc, result.stderr.decode() if result.stderr else "unknown error")
+                except Exception as exc:
+                    logging.error("Failed to restore DNS for %s: %s", svc, exc)
+            logging.info("DNS servers restored for %d services.", success_count)
+        except Exception as exc:
+            logging.error("Critical failure restoring DNS: %s", exc)
 
     # ── Common Helpers ────────────────────────────────────────────────────────
 
@@ -980,6 +1083,19 @@ class ForcedFocusDaemon:
         except Exception as exc:
             logging.error("_remove_block error: %s", exc)
 
+    def _play_sound(self, category: str):
+        """Play a configured sound file using macOS afplay."""
+        setting_key = f"sound_{category.lower().replace(' ', '_')}"
+        filename = self.settings.get(setting_key)
+        
+        if not filename:
+            # Fallback if the specific key doesn't exist
+            return
+
+        sound_path = WEB_DIR / "sounds" / filename
+        if sound_path.exists():
+            subprocess.Popen(["afplay", str(sound_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     def _transition_pomodoro_phase(self):
         if self.pomo_phase == "focus":
             self.pomo_phase = "break"
@@ -988,6 +1104,7 @@ class ForcedFocusDaemon:
             self._mono_pomo_phase_end = get_continuous_time() + self.pomo_phase_remaining
             self._remove_block()
             self._persist_session_lock()
+            self._play_sound("break")
             logging.info("Pomodoro: cycle %d focus ended. Break for %dm.", 
                          self.pomo_current_cycle, self.pomo_break_minutes)
         else:
@@ -1002,11 +1119,13 @@ class ForcedFocusDaemon:
             self._mono_pomo_phase_end = get_continuous_time() + self.pomo_phase_remaining
             self._enforce_current_mode()
             self._persist_session_lock()
+            self._play_sound("start")
             logging.info("Pomodoro: cycle %d/%d focus started.", 
                          self.pomo_current_cycle, self.pomo_total_cycles)
 
     def _cleanup_session(self):
         logging.info("Cleaning up session (mode=%s)...", self.mode)
+        self._play_sound("end")
         was_whitelist = self.mode == "whitelist"
 
         try:
@@ -1018,6 +1137,7 @@ class ForcedFocusDaemon:
                     self.dns_proxy.stop()
                     self.dns_proxy = None
                 self._restore_dns()
+            self._enforce_firewall(False)
             self._flush_dns()
         except Exception as exc:
             logging.error("cleanup_session error: %s", exc)
@@ -1038,13 +1158,14 @@ class ForcedFocusDaemon:
         self.pomo_break_minutes = 0
         self.pomo_total_cycles = 0
         self.pomo_current_cycle = 0
+        
+        self._reenforce_flag = False
         self.pomo_phase = "focus"
         self.pomo_phase_expiry = None
         self._mono_session_end = 0.0
         self._mono_unlock_end = 0.0
         self._mono_pomo_phase_end = 0.0
         self._passphrase_attempts = 0
-        self._reenforce_flag = False
         # Do NOT clear schedules on session cleanup!
         logging.info("Session ended. Hosts restored. DNS flushed.")
 
@@ -1055,6 +1176,95 @@ class ForcedFocusDaemon:
         subprocess.run(["killall", "-HUP", "mDNSResponder"], capture_output=True, timeout=5)
         # Full mDNSResponder reset (clears all cached records)
         subprocess.run(["killall", "-USR1", "mDNSResponder"], capture_output=True, timeout=5)
+
+    def _clear_browser_caches(self):
+        """Deep clean of browser caches and service workers across all profiles."""
+        try:
+            user_file = Path("/etc/forcefocus/user")
+            if not user_file.exists(): 
+                return
+            username = user_file.read_text().strip()
+            home = Path(f"/Users/{username}")
+            if not home.exists(): 
+                return
+
+            import shutil
+            
+            # 1. Targeted fixed paths
+            all_paths = [
+                home / "Library/Caches/com.apple.Safari",
+                home / "Library/Safari/ServiceWorkers",
+                home / "Library/Caches/Firefox",
+                home / "Library/Containers/com.apple.Safari/Data/Library/Caches",
+                home / "Library/Containers/com.apple.Safari/Data/Library/WebKit",
+            ]
+
+            # 2. Chromium browsers (Chrome, Edge, Brave, Dia) - handle all profiles
+            chromium_bases = [
+                home / "Library/Application Support/Google/Chrome",
+                home / "Library/Application Support/Microsoft Edge",
+                home / "Library/Application Support/BraveSoftware/Brave-Browser",
+                home / "Library/Application Support/Dia",
+                home / "Library/Caches/Google/Chrome",
+                home / "Library/Caches/Microsoft Edge",
+                home / "Library/Caches/BraveSoftware/Brave-Browser",
+                home / "Library/Caches/Dia",
+            ]
+
+            for base in chromium_bases:
+                if not base.exists(): continue
+                
+                # Check for nested 'User Data' folder (Dia uses this)
+                scan_targets = [base]
+                user_data = base / "User Data"
+                if user_data.exists():
+                    scan_targets.append(user_data)
+
+                for target in scan_targets:
+                    try:
+                        for profile_dir in target.iterdir():
+                            if profile_dir.is_dir() and (profile_dir.name == "Default" or profile_dir.name.startswith("Profile")):
+                                all_paths.append(profile_dir / "Service Worker")
+                                all_paths.append(profile_dir / "Cache")
+                                all_paths.append(profile_dir / "Code Cache")
+                                all_paths.append(profile_dir / "IndexedDB")
+                    except Exception:
+                        continue
+
+            for p in all_paths:
+                if p.exists():
+                    try:
+                        if p.is_dir():
+                            shutil.rmtree(p, ignore_errors=True)
+                        else:
+                            p.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+            
+            logging.info("Deep browser cache clean completed for user '%s'.", username)
+        except Exception as exc:
+            logging.error("Failed to clear browser caches: %s", exc)
+
+    def _enforce_firewall(self, enable: bool):
+        """Block QUIC (UDP 443) to force browsers to fallback to TCP/DNS blocking.
+        
+        Uses macOS pfctl with an anchor to avoid touching /etc/pf.conf.
+        """
+        try:
+            if enable:
+                # 1. Enable PF
+                subprocess.run(["pfctl", "-e"], capture_output=True, timeout=5)
+                # 2. Load rules into anchor
+                rules = "block drop out proto udp from any to any port 443\n"
+                process = subprocess.Popen(["pfctl", "-a", "forcefocus", "-f", "-"], 
+                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                process.communicate(input=rules)
+                logging.info("Firewall: QUIC (UDP 443) blocked.")
+            else:
+                subprocess.run(["pfctl", "-a", "forcefocus", "-F", "all"], capture_output=True, timeout=5)
+                logging.info("Firewall: rules cleared.")
+        except Exception as exc:
+            logging.error("Firewall enforcement failed: %s", exc)
 
     # ── Watchdog ──────────────────────────────────────────────────────────────
 
@@ -1079,6 +1289,7 @@ class ForcedFocusDaemon:
                 "session_type": self.session_type,
                 "mono_elapsed": get_continuous_time() - (self._mono_session_end - self.total_duration_seconds),
                 "last_persist_wall": datetime.now().isoformat(),
+                "settings": self.settings
             })
             if self.pending_unlock_at:
                 data["pending_unlock_at"] = self.pending_unlock_at.isoformat()
@@ -1103,22 +1314,133 @@ class ForcedFocusDaemon:
         except Exception as exc:
             logging.error("Failed to persist session.lock: %s", exc)
 
+    def _load_settings(self):
+        """Load settings from JSON, merging with defaults."""
+        try:
+            if SETTINGS_FILE.exists():
+                data = json.loads(SETTINGS_FILE.read_text())
+                # Merge defaults to ensure new settings exist
+                final = DEFAULT_SETTINGS.copy()
+                final.update(data)
+                return final
+        except Exception as exc:
+            logging.error("Failed to load settings: %s", exc)
+        return DEFAULT_SETTINGS.copy()
+
+    def _save_settings(self, new_settings):
+        """Save settings to JSON."""
+        try:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            SETTINGS_FILE.write_text(json.dumps(new_settings, indent=2))
+            self.settings = new_settings
+            return True
+        except Exception as exc:
+            logging.error("Failed to save settings: %s", exc)
+            return False
+
+    def _cmd_get_sounds(self) -> dict:
+        """List all available sound files in web/sounds."""
+        sounds_dir = WEB_DIR / "sounds"
+        if not sounds_dir.exists():
+            return {"status": "ok", "sounds": []}
+        try:
+            files = [f.name for f in sounds_dir.iterdir() if f.suffix.lower() == ".mp3"]
+            return {"status": "ok", "sounds": sorted(files)}
+        except Exception as exc:
+            return {"status": "error", "message": str(exc)}
+
+    def _cmd_get_settings(self) -> dict:
+        return {"status": "ok", "settings": self.settings}
+
+    def _cmd_save_settings(self, cmd: dict) -> dict:
+        new_settings = cmd.get("settings", {})
+        if not new_settings:
+            return {"status": "error", "message": "No settings provided."}
+        if self._save_settings(new_settings):
+            return {"status": "ok", "message": "Settings saved.", "settings": self.settings}
+        return {"status": "error", "message": "Failed to save settings."}
+
+    def _cmd_delete_sound(self, cmd: dict) -> dict:
+        filename = cmd.get("filename", "").strip()
+        if not filename:
+            return {"status": "error", "message": "No filename provided."}
+        
+        # Sanitize and check path
+        safe_name = "".join(c for c in filename if c.isalnum() or c in "._- ")
+        target_path = WEB_DIR / "sounds" / safe_name
+        
+        try:
+            target_path.resolve().relative_to(WEB_DIR.resolve() / "sounds")
+            if target_path.exists():
+                target_path.unlink()
+                logging.info("User deleted sound: %s", safe_name)
+                return {"status": "ok", "message": f"Sound '{safe_name}' deleted."}
+            return {"status": "error", "message": "File not found."}
+        except Exception as exc:
+            return {"status": "error", "message": f"Delete failed: {str(exc)}"}
+
+    def _cmd_upload_sound(self, cmd: dict) -> dict:
+        filename = cmd.get("filename", "").strip()
+        data_b64 = cmd.get("data", "")
+        
+        if not filename or not data_b64:
+            return {"status": "error", "message": "Missing filename or data."}
+            
+        if not filename.lower().endswith(".mp3"):
+            return {"status": "error", "message": "Only .mp3 files are allowed."}
+            
+        # Sanitize filename
+        safe_name = "".join(c for c in filename if c.isalnum() or c in "._- ")
+        target_path = WEB_DIR / "sounds" / safe_name
+        
+        try:
+            # Ensure sounds dir exists
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Decode and save
+            audio_data = base64.b64decode(data_b64)
+            target_path.write_bytes(audio_data)
+            
+            logging.info("User uploaded new sound: %s", safe_name)
+            return {"status": "ok", "message": f"Sound '{safe_name}' uploaded successfully."}
+        except Exception as exc:
+            logging.error("Upload error: %s", exc)
+            return {"status": "error", "message": f"Upload failed: {str(exc)}"}
+
     def _verify_dns_redirect(self):
         """Whitelist mode: verify DNS still points to 127.0.0.1, re-enforce if tampered."""
         try:
             services = self._get_network_services()
+            tamper_count = 0
+            fix_count = 0
+            
             for svc in services:
-                dns_out = subprocess.run(
+                dns_result = subprocess.run(
                     ["networksetup", "-getdnsservers", svc],
                     capture_output=True, text=True, timeout=5,
                 )
-                current_dns = dns_out.stdout.strip()
-                if "127.0.0.1" not in current_dns and "aren't any" not in current_dns.lower():
+                
+                if dns_result.returncode != 0:
+                    logging.warning("Failed to get DNS for service '%s': %s", svc, dns_result.stderr.decode() if dns_result.stderr else "unknown error")
+                    continue
+                    
+                current_dns = dns_result.stdout.strip()
+                if "127.0.0.1" not in current_dns and "::1" not in current_dns and "aren't any" not in current_dns.lower():
                     logging.warning("DNS TAMPER on '%s': '%s' — re-enforcing.", svc, current_dns)
-                    subprocess.run(
-                        ["networksetup", "-setdnsservers", svc, "127.0.0.1"],
+                    tamper_count += 1
+                    
+                    fix_result = subprocess.run(
+                        ["networksetup", "-setdnsservers", svc, "127.0.0.1", "::1"],
                         capture_output=True, timeout=5,
                     )
+                    
+                    if fix_result.returncode == 0:
+                        fix_count += 1
+                    else:
+                        logging.error("Failed to fix DNS for service '%s': %s", svc, fix_result.stderr.decode() if fix_result.stderr else "unknown error")
+                        
+            if tamper_count > 0:
+                logging.info("Fixed DNS tampering for %d/%d affected services.", fix_count, tamper_count)
         except Exception as exc:
             logging.error("DNS verify error: %s", exc)
 
@@ -1142,6 +1464,7 @@ class ForcedFocusDaemon:
 
             if cmd_to_start:
                 logging.info("Scheduled time reached. Automatically starting session.")
+                self._play_sound("scheduled")
                 self._start_session(cmd_to_start)
                 continue
 
@@ -1196,6 +1519,17 @@ class ForcedFocusDaemon:
                             self._enforce_block()
                     except Exception as exc:
                         logging.error("Watchdog hosts error: %s", exc)
+                
+                # Integrity check: Firewall (QUIC block) every ~1s
+                if persist_counter % 4 == 0:
+                    try:
+                        res = subprocess.run(["pfctl", "-a", "forcefocus", "-s", "rules"], capture_output=True, text=True, timeout=2)
+                        # Check for '443' and 'udp' in ruleset output
+                        if "443" not in res.stdout or "udp" not in res.stdout:
+                            logging.warning("FIREWALL TAMPER DETECTED. Rules: '%s'. Re-enforcing.", res.stdout.strip())
+                            self._enforce_firewall(True)
+                    except Exception as exc:
+                        logging.error("Watchdog firewall error: %s", exc)
 
                 # Integrity check: session.lock existence
                 if not SESSION_LOCK.exists():
@@ -1383,9 +1717,12 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _read_body(self) -> dict:
-        MAX_BODY = 65536
+        MAX_BODY = 10 * 1024 * 1024 # 10MB limit for audio uploads
         length = int(self.headers.get("Content-Length", 0))
-        if length == 0 or length > MAX_BODY:
+        if length == 0:
+            return {}
+        if length > MAX_BODY:
+            logging.error("Body size %d exceeds MAX_BODY %d", length, MAX_BODY)
             return {}
         raw = self.rfile.read(length).decode("utf-8")
         try:
@@ -1405,6 +1742,10 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
             self._send_json(self.server.daemon_ref._get_status())
         elif path == "/api/lists":
             self._send_json(self.server.daemon_ref._cmd_get_lists())
+        elif path == "/api/sounds":
+            self._send_json(self.server.daemon_ref._cmd_get_sounds())
+        elif path == "/api/settings":
+            self._send_json(self.server.daemon_ref._cmd_get_settings())
         elif path == "/" or path == "":
             self._send_file(WEB_DIR / "index.html")
         elif path == "/menubar":
@@ -1437,7 +1778,12 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
             if "schedule_at" in body:
                 cmd["schedule_at_time"] = body["schedule_at"]
             self._send_json(self.server.daemon_ref._start_session(cmd))
-
+        elif path == "/api/settings":
+            self._send_json(self.server.daemon_ref._cmd_save_settings(body))
+        elif path == "/api/upload-sound":
+            self._send_json(self.server.daemon_ref._cmd_upload_sound(body))
+        elif path == "/api/delete-sound":
+            self._send_json(self.server.daemon_ref._cmd_delete_sound(body))
         elif path == "/api/stop":
             self._send_json(self.server.daemon_ref._request_stop(body.get("key", "")))
 

@@ -17,6 +17,19 @@ let pomoCycles = 4;
 
 let scheduleType = 'now'; // 'now', 'in', 'at'
 
+// Audio Manager
+const AudioManager = {
+    settings: {},
+    availableSounds: [],
+    play: function(type) {
+        // 'type' is start, rescue, unlock, etc.
+        const file = this.settings[`sound_${type}`];
+        if (!file) return;
+        const audio = new Audio('/sounds/' + encodeURIComponent(file));
+        audio.play().catch(e => console.log('Audio error:', e));
+    }
+};
+
 // ── DOM Elements ─────────────────────────────────────────────────────────────
 
 const $ = (sel) => document.querySelector(sel);
@@ -117,6 +130,11 @@ function updateTimerDisplay(remainingSeconds) {
         : 0;
     const offset = circumference * (1 - progress);
     els.timerProgress.style.strokeDashoffset = offset;
+    const core = document.getElementById('timerProgressCore');
+    if (core) {
+        core.style.strokeDasharray = circumference;
+        core.style.strokeDashoffset = offset;
+    }
 }
 
 function startCountdown(remainingSeconds) {
@@ -491,6 +509,12 @@ function initEvents() {
         const res = await api('POST', '/api/start', payload);
         els.btnStart.innerHTML = '<span class="btn-icon">▶</span> Start Blocking';
         if (res.status === 'ok') {
+            if (payload.schedule_in || payload.schedule_at) {
+                // For scheduled items, we might not play the immediate start sound.
+                // We'll let it be silent or just a subtle notification.
+            } else {
+                AudioManager.play('start');
+            }
             showToast(res.message);
             refreshStatus();
         } else {
@@ -510,6 +534,7 @@ function initEvents() {
         const res = await api('POST', '/api/start', payload);
         els.btnRescue.innerHTML = '<span class="btn-icon">⚡</span> Activate Rescue';
         if (res.status === 'ok') {
+            AudioManager.play('rescue');
             showToast(res.message);
             refreshStatus();
         } else {
@@ -519,6 +544,7 @@ function initEvents() {
 
     // Stop button → open modal
     els.btnStop.addEventListener('click', () => {
+        AudioManager.play('unlock');
         els.stopModal.classList.remove('hidden');
         els.passphraseInput.value = '';
         els.modalError.classList.add('hidden');
@@ -576,6 +602,8 @@ function initEvents() {
             addDomain('whitelist');
         }
     });
+
+
 }
 
 function extractDomain(input) {
@@ -650,9 +678,29 @@ async function init() {
     initEvents();
     await refreshStatus();
     await refreshLists();
+    await loadSettings();
 
     // Poll status every 2 seconds
     pollInterval = setInterval(refreshStatus, 2000);
 }
+
+async function loadSettings() {
+    try {
+        const [settingsRes, soundsRes] = await Promise.all([
+            api('GET', '/api/settings'),
+            api('GET', '/api/sounds')
+        ]);
+        if (settingsRes.settings) {
+            AudioManager.settings = settingsRes.settings;
+        }
+        if (soundsRes.sounds) {
+            AudioManager.availableSounds = soundsRes.sounds;
+        }
+    } catch (e) {
+        console.error("Failed to load settings:", e);
+    }
+}
+
+
 
 document.addEventListener('DOMContentLoaded', init);

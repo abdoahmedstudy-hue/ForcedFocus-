@@ -1,7 +1,18 @@
 const API = 'http://127.0.0.1:7070';
 let currentMode = 'blacklist';
+let currentType = 'standard';
 let totalSecs = 0;
 let countdownInterval = null;
+
+const AudioManager = {
+    settings: {},
+    play: function(type) {
+        const file = this.settings[`sound_${type}`];
+        if (!file) return;
+        const audio = new Audio('/sounds/' + encodeURIComponent(file));
+        audio.play().catch(e => console.log('Audio error:', e));
+    }
+};
 
 const $ = sel => document.querySelector(sel);
 const $$ = sel => document.querySelectorAll(sel);
@@ -14,14 +25,35 @@ const els = {
     progress: $('#mbProgress'),
     time: $('#mbTime'),
     label: $('#mbLabel'),
-    modeDisplay: $('#mbMode'),
-    expiresDisplay: $('#mbExpires'),
+    
+    // Info Grid
+    infoMode: $('#mbInfoMode'),
+    infoType: $('#mbInfoType'),
+    infoExpires: $('#mbInfoExpires'),
+    infoNext: $('#mbInfoNext'),
+    infoNextTime: $('#mbInfoNextTime'),
+    nextRow: $('#mbNextRow'),
+    
     btnStart: $('#mbBtnStart'),
     btnStop: $('#mbBtnStop'),
-    btnRescue: $('#mbBtnRescue'),
-    durSelect: $('#mbDurSelect'),
-    rescueDur: $('#mbRescueDur'),
-    modeBtns: $$('.mode-btn')
+    mbBtnRescue: $('#mbBtnRescue'),
+    rescueDur: $('#rescueDur'),
+    
+    // Switchers
+    modeChips: $$('.mode-chip'),
+    typeChips: $$('.type-chip'),
+    durChips: $$('.dur-chip'),
+    pomoChips: $$('.pomo-chip'),
+    
+    // Sections
+    standardSection: $('#standardSection'),
+    pomoSection: $('#pomoSection'),
+    
+    // Inputs
+    customMin: $('#customMin'),
+    pomoFocus: $('#pomoFocus'),
+    pomoBreak: $('#pomoBreak'),
+    pomoCycles: $('#pomoCycles')
 };
 
 async function api(method, path, body = null) {
@@ -43,8 +75,20 @@ function fmt(secs) {
     return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
+function fmtClock(secs) {
+    const now = new Date();
+    const future = new Date(now.getTime() + secs * 1000);
+    let h = future.getHours();
+    const m = future.getMinutes();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    h = h ? h : 12; // the hour '0' should be '12'
+    return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
 function updateRing(rem) {
-    const circ = 2 * Math.PI * 90; // 565.48
+    const circ = 565.48; // 2 * Math.PI * 90
+    els.progress.style.strokeDasharray = circ;
     const prog = totalSecs > 0 ? (1 - rem / totalSecs) : 0;
     els.progress.style.strokeDashoffset = circ * (1 - prog);
 }
@@ -57,6 +101,7 @@ function startCountdown(rem) {
         rem--;
         if (rem <= 0) { rem = 0; clearInterval(countdownInterval); refresh(); }
         els.time.textContent = fmt(rem);
+        if (els.infoNextTime) els.infoNextTime.textContent = fmtClock(rem);
         updateRing(rem);
     }, 1000);
 }
@@ -68,9 +113,10 @@ function renderStatus(data) {
         els.idleState.classList.add('hidden');
         els.activeState.classList.remove('hidden');
         
-        let typeStr = data.session_type === 'rescue' ? 'Rescue Throne 🛡️' : data.mode.toUpperCase();
-        els.modeDisplay.textContent = typeStr;
-        els.expiresDisplay.textContent = `Expires: ${data.expires_at}`;
+        // Populate Info Grid
+        els.infoMode.textContent = data.session_type === 'rescue' ? 'RESCUE' : data.mode.toUpperCase();
+        els.infoType.textContent = data.session_type.toUpperCase();
+        els.infoExpires.textContent = data.expires_at || '--:--';
         
         els.badgeText.textContent = data.session_type === 'rescue' ? 'RESCUE' : 'ACTIVE';
         els.badge.classList.add('active');
@@ -79,6 +125,10 @@ function renderStatus(data) {
             totalSecs = data.pomo_phase_total || 1;
             startCountdown(data.pomo_phase_remaining || 0);
             els.label.textContent = data.pomo_phase.toUpperCase();
+            
+            els.nextRow.classList.remove('hidden');
+            els.infoNext.textContent = (data.pomo_phase === 'focus' ? 'BREAK' : 'FOCUS');
+            
             if (data.pomo_phase === 'break') {
                 $('.timer-ring').classList.add('break');
             } else {
@@ -88,6 +138,7 @@ function renderStatus(data) {
             totalSecs = data.total_duration_seconds || data.remaining_seconds;
             startCountdown(data.remaining_seconds);
             els.label.textContent = 'REMAINING';
+            els.nextRow.classList.add('hidden');
             $('.timer-ring').classList.remove('break');
         }
         
@@ -111,52 +162,97 @@ async function refresh() {
 }
 
 function initEvents() {
-    els.modeBtns.forEach(btn => {
+    // Mode switcher
+    els.modeChips.forEach(btn => {
         btn.addEventListener('click', () => {
-            els.modeBtns.forEach(b => b.classList.remove('active'));
+            els.modeChips.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentMode = btn.dataset.mode;
         });
     });
 
+    // Type switcher
+    els.typeChips.forEach(btn => {
+        btn.addEventListener('click', () => {
+            els.typeChips.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentType = btn.dataset.type;
+            
+            if (currentType === 'pomodoro') {
+                els.standardSection.classList.add('hidden');
+                els.pomoSection.classList.remove('hidden');
+            } else {
+                els.standardSection.classList.remove('hidden');
+                els.pomoSection.classList.add('hidden');
+            }
+        });
+    });
+
+    // Duration chips
+    els.durChips.forEach(btn => {
+        btn.addEventListener('click', () => {
+            els.durChips.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            els.customMin.value = '';
+        });
+    });
+
+    els.customMin.addEventListener('input', () => {
+        els.durChips.forEach(b => b.classList.remove('active'));
+    });
+
+    // Pomodoro chips
+    els.pomoChips.forEach(btn => {
+        btn.addEventListener('click', () => {
+            els.pomoChips.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            els.pomoFocus.value = btn.dataset.focus;
+            els.pomoBreak.value = btn.dataset.break;
+        });
+    });
+
     els.btnStart.addEventListener('click', async () => {
         els.btnStart.textContent = 'Starting...';
-        const dur = parseInt(els.durSelect.value, 10);
-        let payload = { duration: dur, mode: currentMode, session_type: 'standard' };
         
-        if (dur === 25) { // Simple Pomodoro preset mapping for popover
-            payload = {
-                duration: 120, // arbitrary
-                mode: currentMode,
-                session_type: 'pomodoro',
-                focus_minutes: 25,
-                break_minutes: 5,
-                cycles: 4
-            };
+        let payload = { mode: currentMode, session_type: currentType };
+        
+        if (currentType === 'standard') {
+            const activeDur = Array.from(els.durChips).find(c => c.classList.contains('active'));
+            const custom = parseInt(els.customMin.value, 10);
+            payload.duration = custom || (activeDur ? parseInt(activeDur.dataset.min, 10) : 60);
+        } else {
+            payload.focus_minutes = parseInt(els.pomoFocus.value, 10) || 25;
+            payload.break_minutes = parseInt(els.pomoBreak.value, 10) || 5;
+            payload.cycles = parseInt(els.pomoCycles.value, 10) || 4;
+            payload.duration = (payload.focus_minutes + payload.break_minutes) * payload.cycles;
         }
         
         const res = await api('POST', '/api/start', payload);
-        els.btnStart.innerHTML = '<span class="btn-icon">▶</span> Start';
-        if (res.status === 'ok') refresh();
+        els.btnStart.textContent = '▶ Start Session';
+        if (res.status === 'ok') {
+            AudioManager.play('start');
+            refresh();
+        }
     });
 
-    els.btnRescue.addEventListener('click', async () => {
-        els.btnRescue.textContent = 'Activating...';
+    els.mbBtnRescue.addEventListener('click', async () => {
+        els.mbBtnRescue.textContent = 'Activating...';
         const dur = parseInt(els.rescueDur.value, 10);
         const res = await api('POST', '/api/start', {
             duration: dur,
             mode: 'whitelist',
             session_type: 'rescue'
         });
-        els.btnRescue.textContent = '⚡ Activate';
-        if (res.status === 'ok') refresh();
+        els.mbBtnRescue.textContent = 'Activate Rescue';
+        if (res.status === 'ok') {
+            AudioManager.play('rescue');
+            refresh();
+        }
     });
 
     els.btnStop.addEventListener('click', async () => {
-        // Since menubar is compact, we bypass the passphrase modal for 'stop' 
-        // OR we can just open the main UI. For now, let's trigger a stop with empty key.
-        // It will fail if a key is required, but it's okay for testing.
-        // The proper way is to open `localhost:7070` to enter the kill switch.
+        AudioManager.play('unlock');
+        // Redirect to full UI for unlock passphrase
         window.open('http://127.0.0.1:7070', '_blank');
     });
 }
@@ -164,10 +260,22 @@ function initEvents() {
 let globalPollInterval = null;
 
 window.onPopoverShow = () => {
+    loadSettings();
     refresh();
     if (globalPollInterval) clearInterval(globalPollInterval);
     globalPollInterval = setInterval(refresh, 2000);
 };
+
+async function loadSettings() {
+    try {
+        const res = await api('GET', '/api/settings');
+        if (res.settings) {
+            AudioManager.settings = res.settings;
+        }
+    } catch (e) {
+        console.error("Failed to load settings:", e);
+    }
+}
 
 window.onPopoverHide = () => {
     if (globalPollInterval) clearInterval(globalPollInterval);
@@ -176,7 +284,4 @@ window.onPopoverHide = () => {
 
 document.addEventListener('DOMContentLoaded', () => {
     initEvents();
-    // We do NOT start polling here.
-    // The Swift wrapper calls window.onPopoverShow() when the view appears.
-    // This saves CPU by ensuring JS is 100% idle when hidden.
 });

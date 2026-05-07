@@ -23,9 +23,12 @@
                     <p class="tagline">Unbreakable Productivity</p>
                 </div>
             </div>
-            <div class="status-badge" id="statusBadge">
-                <span class="status-dot"></span>
-                <span class="status-text">Idle</span>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <a href="settings.html" class="settings-btn" title="Sound Settings">⚙️</a>
+                <div class="status-badge" id="statusBadge">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Idle</span>
+                </div>
             </div>
         </header>
 
@@ -33,9 +36,21 @@
         <section class="timer-section" id="timerSection">
             <div class="timer-ring" id="timerRing">
                 <svg viewBox="0 0 200 200">
+                    <defs>
+                        <linearGradient id="timerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="var(--accent-blue)" />
+                            <stop offset="100%" stop-color="var(--accent-violet)" />
+                        </linearGradient>
+                    </defs>
                     <circle class="timer-bg" cx="100" cy="100" r="90"/>
-                    <circle class="timer-progress" id="timerProgress" cx="100" cy="100" r="90"/>
+                    <!-- Background Progress (The Path) -->
+                    <circle class="timer-progress-bg" cx="100" cy="100" r="90" style="fill: none; stroke: rgba(255,255,255,0.05); stroke-width: 14;"/>
+                    <!-- Main Glowing Edge -->
+                    <circle class="timer-progress" id="timerProgress" cx="100" cy="100" r="90" style="stroke: url(#timerGradient);"/>
+                    <!-- Secondary Core Glow -->
+                    <circle class="timer-progress core" id="timerProgressCore" cx="100" cy="100" r="90" style="fill: none; stroke: #ffffff; stroke-width: 4; stroke-linecap: round; opacity: 0.8; filter: blur(1px);"/>
                 </svg>
+                <div class="timer-blob"></div>
                 <div class="timer-inner">
                     <div class="timer-value" id="timerValue">00:00:00</div>
                     <div class="timer-label" id="timerLabel">REMAINING</div>

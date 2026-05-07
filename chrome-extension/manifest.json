@@ -6,7 +6,8 @@
   "permissions": [
     "alarms",
     "declarativeNetRequest",
-    "declarativeNetRequestFeedback"
+    "declarativeNetRequestFeedback",
+    "browsingData"
   ],
   "host_permissions": [
     "http://127.0.0.1:7070/*"

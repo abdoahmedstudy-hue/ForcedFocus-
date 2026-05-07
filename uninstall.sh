@@ -199,6 +199,11 @@ if [[ -f "/etc/newsyslog.d/forcefocus.conf" ]]; then
     echo -e "    Removed: /etc/newsyslog.d/forcefocus.conf"
 fi
 
+# ── Kill any remaining processes ─────────────────────────────────────────────
+echo -e "${CYAN}  Killing any remaining processes...${NC}"
+pkill -f "forcefocus" 2>/dev/null || true
+echo -e "${GREEN}  ✓ Processes terminated.${NC}"
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

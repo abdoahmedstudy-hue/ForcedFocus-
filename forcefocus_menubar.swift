@@ -21,7 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         // Setup Popover
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 320, height: 480)
+        popover.contentSize = NSSize(width: 320, height: 540)
         popover.behavior = .transient
         popover.delegate = self
 
@@ -54,10 +54,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @objc func togglePopover(_ sender: AnyObject?) {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp {
+            showContextMenu()
+            return
+        }
+
         if popover.isShown {
             closePopover(sender)
         } else {
             showPopover(sender)
+        }
+    }
+
+    func showContextMenu() {
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Open Full Dashboard", action: #selector(openDashboard), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Quit Menu Bar App", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    @objc func openDashboard() {
+        if let url = URL(string: "http://127.0.0.1:7070") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -163,7 +186,7 @@ class WebViewController: NSViewController, WKNavigationDelegate {
 
     override func loadView() {
         // Use an NSVisualEffectView for that sweet native macOS blur
-        let effectView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 320, height: 480))
+        let effectView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 320, height: 540))
         effectView.material = .popover
         effectView.blendingMode = .behindWindow
         effectView.state = .active
@@ -189,6 +212,15 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         super.viewDidLoad()
         let url = URL(string: "http://127.0.0.1:7070/menubar")!
         webView.load(URLRequest(url: url))
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let url = navigationAction.request.url, navigationAction.navigationType == .linkActivated {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
     }
 }
 
