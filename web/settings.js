@@ -17,6 +17,8 @@ const els = {
     toast: $('#toast'),
     fileInput: $('#fileInput'),
     btnTriggerUpload: $('#btnTriggerUpload'),
+    btnToggleLibrary: $('#btnToggleLibrary'),
+    libraryContent: $('#libraryContent'),
     uploadStatus: $('#uploadStatus'),
     groupList: $('#groupList'),
     btnNewGroup: $('#btnNewGroup'),
@@ -93,7 +95,7 @@ async function handleFileUpload(e) {
     reader.onload = async () => {
         const base64 = reader.result.split(',')[1];
         try {
-            const res = await api('POST', '/api/sounds/upload', {
+            const res = await api('POST', '/api/upload-sound', {
                 filename: file.name,
                 data: base64
             });
@@ -103,6 +105,7 @@ async function handleFileUpload(e) {
                 if (soundsRes.sounds) {
                     availableSounds = soundsRes.sounds;
                     renderSettings();
+                    renderSoundLibrary();
                 }
             } else {
                 showToast('Error: ' + res.message);
@@ -133,9 +136,9 @@ function renderSettings() {
     for (const [key, label] of Object.entries(labels)) {
         const current = settings[key] || '';
         html += `
-            <div class="pomo-field">
+            <div class="settings-item">
                 <label>${escapeHtml(label)}</label>
-                <select data-key="${escapeHtml(key)}" style="width: 100%; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--radius-xs); color: var(--text-primary); padding: 8px; font-family: inherit; outline: none; cursor: pointer;">
+                <select data-key="${escapeHtml(key)}">
                     <option value="">None</option>
                     ${availableSounds.map(s => `<option value="${escapeHtml(s)}" ${s === current ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}
                 </select>
@@ -177,6 +180,7 @@ async function init() {
         if (groupsRes.groups) availableGroups = groupsRes.groups;
         
         renderSettings();
+        renderSoundLibrary();
         renderGroups();
     } catch (e) {
         console.error("Init error:", e);
@@ -186,6 +190,20 @@ async function init() {
     els.btnSaveSettings.addEventListener('click', saveSettings);
     els.btnTriggerUpload.addEventListener('click', () => els.fileInput.click());
     els.fileInput.addEventListener('change', handleFileUpload);
+    
+    // Sound Library Listeners
+    els.soundLibrary.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-icon');
+        if (!btn) return;
+        const sound = btn.dataset.sound;
+        if (btn.classList.contains('play-sound')) playPreview(sound);
+        if (btn.classList.contains('delete-sound')) deleteSound(sound);
+    });
+    
+    els.btnToggleLibrary.addEventListener('click', () => {
+        els.btnToggleLibrary.classList.toggle('open');
+        els.libraryContent.classList.toggle('hidden');
+    });
     
     // Groups Listeners
     els.btnNewGroup.addEventListener('click', () => openGroupModal());
@@ -208,6 +226,51 @@ async function init() {
     });
 }
 
+function renderSoundLibrary() {
+    if (availableSounds.length === 0) {
+        els.soundLibrary.innerHTML = '<div style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px;">No sounds available.</div>';
+        return;
+    }
+    
+    let html = '';
+    for (const sound of availableSounds) {
+        const safeSound = escapeHtml(sound);
+        html += `
+            <div class="sound-row">
+                <div class="sound-main">
+                    <button class="btn-icon play-sound" data-sound="${safeSound}" title="Play">▶️</button>
+                    <div class="sound-info" title="${safeSound}">${safeSound}</div>
+                </div>
+                <div class="sound-actions">
+                    <button class="btn-icon delete delete-sound" data-sound="${safeSound}" title="Delete">🗑️</button>
+                </div>
+            </div>
+        `;
+    }
+    els.soundLibrary.innerHTML = html;
+}
+
+async function deleteSound(filename) {
+    if (!confirm(`Delete sound "${filename}"?`)) return;
+    
+    try {
+        const res = await api('POST', '/api/delete-sound', { filename });
+        if (res.status === 'ok') {
+            showToast(`Sound "${filename}" deleted.`);
+            const soundsRes = await api('GET', '/api/sounds');
+            if (soundsRes.sounds) {
+                availableSounds = soundsRes.sounds;
+                renderSettings();
+                renderSoundLibrary();
+            }
+        } else {
+            showToast('Error: ' + res.message);
+        }
+    } catch (e) {
+        showToast('Failed to delete sound.');
+    }
+}
+
 function renderGroups() {
     if (Object.keys(availableGroups).length === 0) {
         els.groupList.innerHTML = '<div style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px;">No groups created yet.</div>';
@@ -219,14 +282,14 @@ function renderGroups() {
     for (const [name, domains] of Object.entries(availableGroups)) {
         const safeName = escapeHtml(name);
         html += `
-            <div class="card" style="margin-bottom: 12px; padding: 16px; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02);">
-                <div>
-                    <div style="font-weight: 600; font-size: 14px;">${safeName}</div>
-                    <div style="font-size: 11px; color: var(--text-muted);">${domains.length} domains</div>
+            <div class="group-card">
+                <div class="group-info">
+                    <div class="group-name">${safeName}</div>
+                    <div class="group-meta">${domains.length} domains</div>
                 </div>
-                <div style="display: flex; gap: 8px;">
+                <div class="group-actions">
                     <button class="btn-group-action btn-icon" data-action="edit" data-name="${safeName}" title="Edit Group">✏️</button>
-                    <button class="btn-group-action btn-icon" data-action="delete" data-name="${safeName}" title="Delete Group">🗑️</button>
+                    <button class="btn-group-action btn-icon delete" data-action="delete" data-name="${safeName}" title="Delete Group">🗑️</button>
                 </div>
             </div>
         `;

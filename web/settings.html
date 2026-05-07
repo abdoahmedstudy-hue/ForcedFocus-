@@ -34,13 +34,25 @@
                         <div class="loading">Fetching audio files...</div>
                     </div>
 
-                    <div class="upload-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border);">
+                    <div class="upload-section">
                         <label class="upload-label">
-                            <span style="font-size: 13px; color: var(--text-secondary);">📤 Upload New Sound (.mp3)</span>
+                            <span>Upload New Sound (.mp3)</span>
                             <input type="file" id="fileInput" accept="audio/mpeg" hidden>
                             <button class="btn-upload" id="btnTriggerUpload">Choose File</button>
                         </label>
                         <div id="uploadStatus" class="upload-status"></div>
+                    </div>
+
+                    <div class="library-section">
+                        <button class="library-toggle" id="btnToggleLibrary">
+                            <span>Your Sounds</span>
+                            <span class="toggle-icon">▼</span>
+                        </button>
+                        <div class="library-content hidden" id="libraryContent">
+                            <div class="sound-list scroll-area" id="soundLibrary">
+                                <div class="loading">Loading library...</div>
+                            </div>
+                        </div>
                     </div>
 
                     <div style="margin-top: 24px;">
@@ -58,7 +70,7 @@
                         <p class="list-desc">Create sets of websites to block together.</p>
                     </div>
 
-                    <div class="group-list scroll-area" id="groupList" style="flex: 1; margin-top: 12px; max-height: 400px;">
+                    <div class="group-list scroll-area" id="groupList" style="flex: 1; margin-top: 16px; max-height: 500px;">
                         <div class="loading">Loading groups...</div>
                     </div>
                 </section>
@@ -80,7 +92,7 @@
                     </div>
                     <div class="pomo-field">
                         <label>Domains (one per line)</label>
-                        <textarea id="groupDomainsInput" style="width: 100%; min-height: 150px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--radius-xs); color: var(--text-primary); padding: 12px; font-family: inherit; font-size: 13px; outline: none; resize: vertical;" placeholder="reddit.com&#10;twitter.com"></textarea>
+                        <textarea id="groupDomainsInput" class="custom-textarea" placeholder="reddit.com&#10;twitter.com"></textarea>
                     </div>
                 </div>
                 <div class="modal-actions" style="margin-top: 24px;">
