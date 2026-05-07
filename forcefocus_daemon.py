@@ -467,9 +467,8 @@ class ForcedFocusDaemon:
 
     def _install_signal_handlers(self):
         def _handler(signum, _frame):
-            name = signal.Signals(signum).name
-            logging.warning("Caught %s — setting re-enforce flag.", name)
             # Non-blocking: just set flag, watchdog will re-enforce (C1 fix)
+            # We keep this handler minimal as only a few functions are signal-safe.
             self._reenforce_flag = True
         signal.signal(signal.SIGTERM, _handler)
         signal.signal(signal.SIGINT, _handler)
@@ -1927,6 +1926,17 @@ class ForcedFocusDaemon:
             return
 
         with self.lock:
+            # C1: Handle signal-driven re-enforce (flag set without lock)
+            if self._reenforce_flag:
+                self._reenforce_flag = False
+                logging.warning("Caught signal — setting re-enforce flag (deferred from handler).")
+                if self.active and not (self.session_type == "pomodoro" and self.pomo_phase == "break"):
+                    logging.info("Signal re-enforce: re-applying block rules.")
+                    try:
+                        self._enforce_current_mode()
+                    except Exception as exc:
+                        logging.error("Signal re-enforce failed: %s", exc)
+
             if not self.active:
                 return
 
@@ -1936,16 +1946,6 @@ class ForcedFocusDaemon:
             if self._wd_persist_counter >= 120:  # 120 * 250ms = 30s
                 self._wd_persist_counter = 0
                 self._persist_session_lock()
-
-            # C1: Handle signal-driven re-enforce (flag set without lock)
-            if self._reenforce_flag:
-                self._reenforce_flag = False
-                if not (self.session_type == "pomodoro" and self.pomo_phase == "break"):
-                    logging.info("Signal re-enforce: re-applying block rules.")
-                    try:
-                        self._enforce_current_mode()
-                    except Exception as exc:
-                        logging.error("Signal re-enforce failed: %s", exc)
 
             # Use monotonic time for duration checks (immune to clock changes)
             if now_mono >= self._mono_session_end:
