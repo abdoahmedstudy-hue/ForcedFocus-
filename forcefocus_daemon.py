@@ -1149,8 +1149,7 @@ class ForcedFocusDaemon:
         expanded = set()
         
         # Layer 1: Always allow common CDN/infrastructure domains
-        for cdn in CDN_INFRASTRUCTURE_DOMAINS:
-            expanded.add(cdn)
+        expanded.update(CDN_INFRASTRUCTURE_DOMAINS)
             
         # Add user domains and Layer 2 bundles
         for d in domains:
