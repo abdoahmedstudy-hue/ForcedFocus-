@@ -15,7 +15,8 @@ mkdir -p "$RES_DIR"
 
 # Compile Swift code
 # Link against AppKit and WebKit
-swiftc forcefocus_menubar.swift -o "$BIN_DIR/$APP_NAME" -framework AppKit -framework WebKit
+swiftc forcefocus_menubar.swift -o "$BIN_DIR/$APP_NAME" \
+    -framework AppKit -framework WebKit -sdk $(xcrun --show-sdk-path)
 
 # Create Info.plist
 cat <<EOF > "$PLIST"
@@ -32,11 +33,15 @@ cat <<EOF > "$PLIST"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>2.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>2.1.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSUserNotificationUsageDescription</key>
+    <string>ForcedFocus needs to show notifications for session updates.</string>
 </dict>
 </plist>
 EOF
