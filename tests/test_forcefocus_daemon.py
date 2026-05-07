@@ -1,0 +1,135 @@
+import unittest
+from unittest.mock import patch, MagicMock, mock_open
+from pathlib import Path
+import json
+import datetime
+
+# Import the class to be tested
+from forcefocus_daemon import ForcedFocusDaemon
+
+class TestForcedFocusDaemon(unittest.TestCase):
+    def setUp(self):
+        # Initialize daemon without starting its threads or hitting filesystem too much
+        with patch('forcefocus_daemon.ForcedFocusDaemon._load_settings', return_value={}):
+            with patch('forcefocus_daemon.ForcedFocusDaemon._restore_session'):
+                self.daemon = ForcedFocusDaemon()
+
+    def test_validate_domain(self):
+        # Valid domains
+        self.assertTrue(ForcedFocusDaemon._validate_domain("google.com"))
+        self.assertTrue(ForcedFocusDaemon._validate_domain("www.google.com"))
+        self.assertTrue(ForcedFocusDaemon._validate_domain("my-site.co.uk"))
+        self.assertTrue(ForcedFocusDaemon._validate_domain("a.b.c.d.e.com"))
+
+        # Invalid domains
+        self.assertFalse(ForcedFocusDaemon._validate_domain("google")) # No dot
+        self.assertFalse(ForcedFocusDaemon._validate_domain(".google.com")) # Starts with dot
+        self.assertFalse(ForcedFocusDaemon._validate_domain("google.com-")) # Ends with hyphen
+        self.assertFalse(ForcedFocusDaemon._validate_domain("goo gle.com")) # Space
+        self.assertFalse(ForcedFocusDaemon._validate_domain("http://google.com")) # Protocol
+        self.assertFalse(ForcedFocusDaemon._validate_domain("google.com/path")) # Path
+        self.assertFalse(ForcedFocusDaemon._validate_domain("a" * 256 + ".com")) # Too long
+
+    @patch('forcefocus_daemon.ForcedFocusDaemon._save_lists')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._load_lists')
+    def test_cmd_add_domain(self, mock_load, mock_save):
+        mock_load.return_value = {"blacklist": [], "whitelist": []}
+        cmd = {"list": "blacklist", "domain": "example.com"}
+
+        result = self.daemon._cmd_add_domain(cmd)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("example.com", result["lists"]["blacklist"])
+        mock_save.assert_called_once()
+
+    @patch('forcefocus_daemon.ForcedFocusDaemon._save_lists')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._load_lists')
+    def test_cmd_remove_domain(self, mock_load, mock_save):
+        mock_load.return_value = {"blacklist": ["example.com"], "whitelist": []}
+        cmd = {"list": "blacklist", "domain": "example.com"}
+
+        result = self.daemon._cmd_remove_domain(cmd)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertNotIn("example.com", result["lists"]["blacklist"])
+        mock_save.assert_called_once()
+
+    @patch('forcefocus_daemon.ForcedFocusDaemon._save_groups')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._load_groups')
+    def test_cmd_add_group(self, mock_load, mock_save):
+        mock_load.return_value = {}
+        cmd = {"name": "Work", "domains": ["slack.com", "github.com"]}
+
+        result = self.daemon._cmd_add_group(cmd)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["groups"]["Work"], ["slack.com", "github.com"])
+        mock_save.assert_called_once()
+
+    @patch('forcefocus_daemon.ForcedFocusDaemon._save_groups')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._load_groups')
+    def test_cmd_remove_group(self, mock_load, mock_save):
+        mock_load.return_value = {"Work": ["slack.com"]}
+        cmd = {"name": "Work"}
+
+        result = self.daemon._cmd_remove_group(cmd)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertNotIn("Work", result["groups"])
+        mock_save.assert_called_once()
+
+    @patch('forcefocus_daemon.ForcedFocusDaemon._enforce_block')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._atomic_write_json')
+    @patch('forcefocus_daemon.get_continuous_time', return_value=100.0)
+    @patch('forcefocus_daemon.ForcedFocusDaemon._get_blacklist_domains', return_value=["example.com"])
+    def test_start_session_blacklist(self, mock_bl, mock_time, mock_write, mock_enforce):
+        cmd = {"action": "start", "duration_minutes": 60, "mode": "blacklist"}
+
+        result = self.daemon._start_session(cmd)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(self.daemon.active)
+        self.assertEqual(self.daemon.mode, "blacklist")
+        self.assertEqual(self.daemon._mono_session_end, 100.0 + 3600)
+        mock_enforce.assert_called_once()
+        mock_write.assert_called_once()
+
+    @patch('forcefocus_daemon.subprocess.run')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._flush_dns')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._enforce_browser_policies')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._enforce_firewall')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._strip_block', return_value="stripped")
+    @patch('forcefocus_daemon.Path.read_text', return_value="original")
+    @patch('forcefocus_daemon.Path.write_text')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._play_sound')
+    def test_cleanup_session(self, mock_sound, mock_write, mock_read, mock_strip, mock_fw, mock_bp, mock_dns, mock_run):
+        self.daemon.active = True
+        self.daemon.mode = "blacklist"
+
+        self.daemon._cleanup_session()
+
+        self.assertFalse(self.daemon.active)
+        mock_write.assert_called()
+        mock_dns.assert_called_once()
+        mock_fw.assert_called_with(False)
+        mock_bp.assert_called_with(False)
+
+    @patch('forcefocus_daemon.ForcedFocusDaemon._persist_session_lock')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._enforce_current_mode')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._remove_block')
+    @patch('forcefocus_daemon.get_continuous_time', return_value=200.0)
+    @patch('forcefocus_daemon.ForcedFocusDaemon._play_sound')
+    def test_transition_pomodoro_phase(self, mock_sound, mock_time, mock_remove, mock_enforce, mock_persist):
+        self.daemon.pomo_phase = "focus"
+        self.daemon.pomo_break_minutes = 5
+        self.daemon.pomo_current_cycle = 1
+
+        self.daemon._transition_pomodoro_phase()
+
+        self.assertEqual(self.daemon.pomo_phase, "break")
+        self.assertEqual(self.daemon._mono_pomo_phase_end, 200.0 + 300)
+        mock_remove.assert_called_once()
+        mock_persist.assert_called_once()
+
+if __name__ == '__main__':
+    unittest.main()
