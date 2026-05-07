@@ -284,14 +284,99 @@
         }
         
         .timer-progress {
-            stroke-dasharray: 565.48; /* 2 * PI * 90 */
-            stroke-dashoffset: 565.48;
-            stroke-width: 14; /* Thicker and bolder */
+            fill: none;
+            stroke: var(--accent-blue);
+            stroke-dasharray: 0 565.48; /* 2 * PI * 90 */
+            stroke-dashoffset: 0;
+            stroke-width: 14; 
+            stroke-linecap: round;
+            transition: stroke-dasharray 0.1s linear;
         }
         
         .timer-bg {
+            fill: none;
+            stroke: #ffffff;
             stroke-width: 14;
             opacity: 0.1;
+        }
+
+        .timer-ring.break .timer-progress {
+            stroke: #10b981; /* Green for breaks */
+        }
+
+        /* Group Selection */
+        .group-section {
+            margin-bottom: 8px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+        }
+
+        .group-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .group-header span:first-child {
+            font-size: 10px;
+            font-weight: 800;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .group-count {
+            font-size: 9px;
+            font-weight: 800;
+            color: var(--accent-blue);
+            background: rgba(124, 127, 255, 0.1);
+            padding: 1px 6px;
+            border-radius: 100px;
+        }
+
+        .group-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            max-height: 80px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .group-grid::-webkit-scrollbar {
+            width: 2px;
+        }
+
+        .group-grid::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+        }
+
+        .group-chip {
+            padding: 3px 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 100px;
+            color: var(--text-muted);
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            white-space: nowrap;
+        }
+
+        .group-chip:hover {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-secondary);
+        }
+
+        .group-chip.active {
+            background: rgba(124, 127, 255, 0.15);
+            border-color: var(--accent-blue);
+            color: var(--text-primary);
         }
     </style>
 </head>
@@ -360,6 +445,17 @@
                 </div>
             </div>
 
+            <!-- Group Selection -->
+            <div id="groupSection" class="group-section hidden">
+                <div class="group-header">
+                    <span>🛡️ Domain Groups</span>
+                    <span class="group-count" id="groupCount">0 selected</span>
+                </div>
+                <div class="group-grid" id="groupGrid">
+                    <!-- Groups populated by JS -->
+                </div>
+            </div>
+
             <!-- Rescue Section -->
             <div class="rescue-section">
                 <div class="rescue-header">
@@ -373,7 +469,7 @@
                 <button class="btn-rescue" id="mbBtnRescue">Activate Rescue</button>
             </div>
 
-            <button class="btn-start" id="mbBtnStart">▶ Start Session</button>
+            <button class="btn-start" id="mbBtnStart">Start Session</button>
         </div>
 
         <!-- ACTIVE STATE -->

@@ -249,10 +249,12 @@ function renderStatus(data) {
                 infoPhase.appendChild(document.createTextNode(' ' + String(data.pomo_phase).toUpperCase()));
             }
 
+            // Update ring color
+            const ring = $('#ringProgress');
+            if (ring) ring.classList.toggle('break', data.pomo_phase === 'break');
+            
             const infoCycle = $('#infoCycle');
-            if (infoCycle) {
-                infoCycle.textContent = `${data.pomo_current_cycle} / ${data.pomo_total_cycles}`;
-            }
+            if (infoCycle) infoCycle.textContent = `${data.pomo_current_cycle}/${data.pomo_total_cycles}`;
 
             const pomoNextRow = $('#pomoNextRow');
             const infoPomoNext = $('#infoPomoNext');
@@ -288,6 +290,8 @@ function renderStatus(data) {
 
             const timerRing = $('.timer-ring');
             if (timerRing) timerRing.classList.remove('break');
+            const ring = $('#ringProgress');
+            if (ring) ring.classList.remove('break');
         }
 
         // Session info
@@ -313,6 +317,8 @@ function renderStatus(data) {
         stopCountdown();
         const timerRing = $('.timer-ring');
         if (timerRing) timerRing.classList.remove('break');
+        const ring = $('#ringProgress');
+        if (ring) ring.classList.remove('break');
     }
 }
 

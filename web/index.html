@@ -45,15 +45,8 @@
                                 </linearGradient>
                             </defs>
                             <circle class="timer-bg" cx="100" cy="100" r="90" />
-                            <!-- Background Progress (The Path) -->
-                            <circle class="timer-progress-bg" cx="100" cy="100" r="90"
-                                style="fill: none; stroke: rgba(255,255,255,0.05); stroke-width: 14;" />
-                            <!-- Main Glowing Edge -->
                             <circle class="timer-progress" id="timerProgress" cx="100" cy="100" r="90"
                                 style="stroke: url(#timerGradient);" />
-                            <!-- Secondary Core Glow -->
-                            <circle class="timer-progress core" id="timerProgressCore" cx="100" cy="100" r="90"
-                                style="fill: none; stroke: #ffffff; stroke-width: 4; stroke-linecap: round; opacity: 0.8; filter: blur(1px);" />
                         </svg>
                         <div class="timer-blob"></div>
                         <div class="timer-inner">
@@ -91,7 +84,7 @@
                 <!-- Start/Stop (Global) -->
                 <div class="action-buttons" style="margin-top: auto; padding-top: 16px;">
                     <button class="btn btn-start" id="btnStart">
-                        <span class="btn-icon">▶</span> Start Blocking
+                        Start Blocking
                     </button>
                     <button class="btn btn-stop hidden" id="btnStop">
                         <span class="btn-icon">🔐</span> Request Unlock
@@ -204,7 +197,7 @@
                                 lockdown. Blocks <strong>all</strong> websites without exception.</p>
                             <button class="btn btn-rescue" id="btnRescue"
                                 style="width: 100%; padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius); color: var(--danger); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: var(--transition); box-shadow: 0 4px 16px rgba(239, 68, 68, 0.1);">
-                                <span class="btn-icon">⚡</span> Activate Rescue
+                                Activate Rescue
                             </button>
                         </div>
                     </section>
