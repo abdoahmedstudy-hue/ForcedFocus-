@@ -139,6 +139,8 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
             self._send_json(send_to_daemon({"action": "get_lists"}))
         elif path == "/" or path == "":
             self._send_file(WEB_DIR / "index.html")
+        elif path == "/menubar":
+            self._send_file(WEB_DIR / "menubar.html")
         else:
             # Serve static files
             safe_path = path.lstrip("/")
