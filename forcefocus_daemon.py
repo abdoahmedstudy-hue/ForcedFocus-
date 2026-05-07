@@ -348,7 +348,7 @@ class LocalDNSProxy(threading.Thread):
         if domain == "localhost" or domain.endswith(".local"):
             allowed = True
         else:
-            for d in self.ff_daemon.blocked_domains:
+            for d in self.ff_daemon.active_domains:
                 if domain == d or domain.endswith("." + d):
                     allowed = True
                     break
@@ -376,7 +376,7 @@ class ForcedFocusDaemon:
     def __init__(self):
         self.active = False
         self.mode = "blacklist"
-        self.blocked_domains: list[str] = []
+        self.active_domains: list[str] = []
         self.session_base_domains: list[str] = []  # Raw domains before /etc/hosts expansion
         self.session_expiry: datetime | None = None
         self.pending_unlock_at: datetime | None = None
@@ -526,7 +526,7 @@ class ForcedFocusDaemon:
             }
         return {
             "status": "ok",
-            "domains": self.blocked_domains,
+            "domains": self.active_domains,
             "mode": self.mode
         }
 
@@ -751,12 +751,12 @@ class ForcedFocusDaemon:
         
         if self.mode == "whitelist":
             self.original_dns = data.get("original_dns", {})
-            self.blocked_domains = data.get("blocked_domains", [])
+            self.active_domains = data.get("active_domains", data.get("blocked_domains", []))
             self.whitelist_resolved = data.get("whitelist_resolved", {})
-            self.whitelist_count = data.get("whitelist_count", len(self.blocked_domains))
-            self.whitelist_expanded_count = data.get("whitelist_expanded_count", len(self.blocked_domains))
+            self.whitelist_count = data.get("whitelist_count", len(self.active_domains))
+            self.whitelist_expanded_count = data.get("whitelist_expanded_count", len(self.active_domains))
         else:
-            self.blocked_domains = data.get("blocked_domains", self._get_blacklist_domains())
+            self.active_domains = data.get("active_domains", data.get("blocked_domains", self._get_blacklist_domains()))
         self.session_base_domains = data.get("session_base_domains", [])
 
         if self.session_type == "pomodoro" and self.pomo_phase_expiry:
@@ -941,19 +941,17 @@ class ForcedFocusDaemon:
                                 wl_domains.extend(groups[gname])
                 self.session_base_domains = list(set(d.strip().lower() for d in wl_domains if d.strip()))
 
-                # MEDIUM #4: In whitelist mode, blocked_domains actually holds the ALLOW-list.
-                # The DNS proxy checks domains against this list to decide what to forward.
-                # Renaming would require changes across session persistence + DNS proxy.
+                # Whitelist mode: active_domains holds the ALLOW-list.
                 if self.session_type == "rescue":
                     wl_domains_expanded = []
                 else:
                     wl_domains_expanded = self._expand_whitelist_domains(wl_domains)
-                self.blocked_domains = wl_domains_expanded
+                self.active_domains = wl_domains_expanded
                 count = len(wl_domains)
                 expanded_count = len(wl_domains_expanded)
                 self.whitelist_count = count
                 self.whitelist_expanded_count = expanded_count
-                session_data["blocked_domains"] = self.blocked_domains
+                session_data["active_domains"] = self.active_domains
                 session_data["session_base_domains"] = self.session_base_domains
                 session_data["original_dns"] = self.original_dns
                 session_data["whitelist_count"] = count
@@ -979,12 +977,12 @@ class ForcedFocusDaemon:
                         base_bl.extend(sites)
                 self.session_base_domains = list(set(d.strip().lower() for d in base_bl if d.strip() and '.' in d))
                 # Build expanded domain list (for /etc/hosts — needs explicit subdomain entries)
-                self.blocked_domains = self._get_blacklist_domains(selected_groups)
-                session_data["blocked_domains"] = self.blocked_domains
+                self.active_domains = self._get_blacklist_domains(selected_groups)
+                session_data["active_domains"] = self.active_domains
                 session_data["session_base_domains"] = self.session_base_domains
                 self._atomic_write_json(SESSION_LOCK, session_data)
                 self._enforce_block()
-                count = len(self.blocked_domains)
+                count = len(self.active_domains)
                 if self.session_type == "pomodoro":
                     msg = f"Pomodoro (Blacklist): {count} domains blocked for {self.pomo_total_cycles} cycles."
                 else:
@@ -1083,7 +1081,7 @@ class ForcedFocusDaemon:
                 "expires_at": self.session_expiry.strftime("%H:%M:%S"),
                 "remaining_seconds": rem,
                 "total_duration_seconds": self.total_duration_seconds,
-                "domains_count": len(self.blocked_domains) if self.mode == "blacklist" else self.whitelist_count,
+                "domains_count": len(self.active_domains) if self.mode == "blacklist" else self.whitelist_count,
                 "whitelist_total_count": None if self.mode == "blacklist" else self.whitelist_expanded_count,
                 "pending_unlock": self.pending_unlock_at.strftime("%H:%M:%S") if self.pending_unlock_at else None,
                 "pending_unlock_seconds": int(max(0, self._mono_unlock_end - now_mono)) if self._mono_unlock_end > 0 else None,
@@ -1206,7 +1204,7 @@ class ForcedFocusDaemon:
 
     def _build_blacklist_block(self) -> str:
         lines = [MARKER_BEGIN, "# Mode: BLACKLIST", f"# Expires: {self.session_expiry.isoformat()}"]
-        for domain in self.blocked_domains:
+        for domain in self.active_domains:
             lines.append(f"127.0.0.1\t{domain}")
             lines.append(f"::1\t\t{domain}")
         # Block DNS-over-HTTPS providers to prevent browser bypass
@@ -1464,7 +1462,7 @@ class ForcedFocusDaemon:
         self.hosts_hash = None
         self.session_expiry = None
         self.pending_unlock_at = None
-        self.blocked_domains = []
+        self.active_domains = []
         self.session_base_domains = []
         self.original_dns = {}
         self.whitelist_resolved = {}
@@ -1737,11 +1735,11 @@ class ForcedFocusDaemon:
             if self.mode == "whitelist":
                 data["original_dns"] = self.original_dns
                 data["whitelist_resolved"] = self.whitelist_resolved
-                data["blocked_domains"] = self.blocked_domains
+                data["active_domains"] = self.active_domains
                 data["whitelist_count"] = getattr(self, "whitelist_count", 0)
                 data["whitelist_expanded_count"] = getattr(self, "whitelist_expanded_count", 0)
             else:
-                data["blocked_domains"] = self.blocked_domains
+                data["active_domains"] = self.active_domains
             data["session_base_domains"] = getattr(self, "session_base_domains", [])
                 
         try:
