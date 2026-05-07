@@ -2350,12 +2350,10 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-API-Token")
         self.end_headers()
 
-    # LOW #3: Explicitly deny unsupported HTTP methods
-    def do_PUT(self):
-        self._send_json({"status": "error", "message": "Method not allowed."}, 405)
-
-    def do_PATCH(self):
-        self._send_json({"status": "error", "message": "Method not allowed."}, 405)
+    def __getattr__(self, name):
+        if name.startswith("do_"):
+            return lambda: self._send_json({"status": "error", "message": "Method not allowed."}, 405)
+        raise AttributeError(name)
 
 
 def main():
