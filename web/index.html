@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForcedFocus — Stay Focused</title>
+    <meta name="description" content="ForcedFocus: Unbreakable website blocker for macOS productivity.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">⚡</div>
+                <div>
+                    <h1>ForcedFocus</h1>
+                    <p class="tagline">Unbreakable Productivity</p>
+                </div>
+            </div>
+            <div class="status-badge" id="statusBadge">
+                <span class="status-dot"></span>
+                <span class="status-text">Idle</span>
+            </div>
+        </header>
+
+        <!-- Timer Section -->
+        <section class="timer-section" id="timerSection">
+            <div class="timer-ring" id="timerRing">
+                <svg viewBox="0 0 200 200">
+                    <circle class="timer-bg" cx="100" cy="100" r="90"/>
+                    <circle class="timer-progress" id="timerProgress" cx="100" cy="100" r="90"/>
+                </svg>
+                <div class="timer-inner">
+                    <div class="timer-value" id="timerValue">00:00:00</div>
+                    <div class="timer-label" id="timerLabel">REMAINING</div>
+                </div>
+            </div>
+            <div class="timer-info" id="timerInfo">
+                <span id="modeDisplay">—</span>
+                <span id="expiresDisplay">—</span>
+            </div>
+        </section>
+
+        <!-- Controls -->
+        <section class="controls-section">
+            <!-- Mode Selector -->
+            <div class="card" id="modeCard">
+                <h2 class="card-title">Blocking Mode</h2>
+                <div class="mode-toggle">
+                    <button class="mode-btn active" id="btnBlacklist" data-mode="blacklist">
+                        <span class="mode-icon">🚫</span>
+                        <span class="mode-name">Blacklist</span>
+                        <span class="mode-desc">Block listed sites</span>
+                    </button>
+                    <button class="mode-btn" id="btnWhitelist" data-mode="whitelist">
+                        <span class="mode-icon">✅</span>
+                        <span class="mode-name">Whitelist</span>
+                        <span class="mode-desc">Allow only listed sites</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Duration -->
+            <div class="card" id="durationCard">
+                <h2 class="card-title">Session Duration</h2>
+                <div class="duration-grid">
+                    <button class="dur-btn" data-minutes="30">30m</button>
+                    <button class="dur-btn" data-minutes="60">1h</button>
+                    <button class="dur-btn active" data-minutes="120">2h</button>
+                    <button class="dur-btn" data-minutes="180">3h</button>
+                    <button class="dur-btn" data-minutes="240">4h</button>
+                    <button class="dur-btn" data-minutes="480">8h</button>
+                </div>
+                <div class="custom-duration">
+                    <input type="number" id="customMinutes" min="1" max="1440" placeholder="Custom (min)">
+                </div>
+            </div>
+
+            <!-- Start/Stop -->
+            <div class="action-buttons">
+                <button class="btn btn-start" id="btnStart">
+                    <span class="btn-icon">▶</span> Start Blocking
+                </button>
+                <button class="btn btn-stop hidden" id="btnStop">
+                    <span class="btn-icon">🔐</span> Request Unlock
+                </button>
+            </div>
+            <div class="unlock-info hidden" id="unlockInfo">
+                <p>⏱ Unlock pending — blocking continues for 20 more minutes</p>
+            </div>
+        </section>
+
+        <!-- Domain Lists -->
+        <section class="lists-section">
+            <!-- Blacklist -->
+            <div class="card list-card">
+                <div class="list-header">
+                    <h2 class="card-title">
+                        <span class="list-icon">🚫</span> Blacklist
+                    </h2>
+                    <span class="list-count" id="blacklistCount">0</span>
+                </div>
+                <p class="list-desc">These sites will be blocked in Blacklist mode.</p>
+                <div class="add-domain">
+                    <input type="text" id="blacklistInput" placeholder="e.g. reddit.com" autocomplete="off">
+                    <button class="btn-add" id="btnAddBlacklist">+</button>
+                </div>
+                <ul class="domain-list" id="blacklistDomains"></ul>
+            </div>
+
+            <!-- Whitelist -->
+            <div class="card list-card">
+                <div class="list-header">
+                    <h2 class="card-title">
+                        <span class="list-icon">✅</span> Whitelist
+                    </h2>
+                    <span class="list-count" id="whitelistCount">0</span>
+                </div>
+                <p class="list-desc">Only these sites will be allowed in Whitelist mode.</p>
+                <div class="add-domain">
+                    <input type="text" id="whitelistInput" placeholder="e.g. github.com" autocomplete="off">
+                    <button class="btn-add" id="btnAddWhitelist">+</button>
+                </div>
+                <ul class="domain-list" id="whitelistDomains"></ul>
+            </div>
+        </section>
+
+        <!-- Stop Modal -->
+        <div class="modal-overlay hidden" id="stopModal">
+            <div class="modal">
+                <h2>🔐 Unlock Session</h2>
+                <p>Enter your kill-switch passphrase.<br>
+                   <strong>Blocking will continue for 20 more minutes</strong> after verification.</p>
+                <input type="password" id="passphraseInput" placeholder="Kill-switch passphrase" autocomplete="off">
+                <div class="modal-actions">
+                    <button class="btn btn-cancel" id="btnCancelStop">Cancel</button>
+                    <button class="btn btn-confirm" id="btnConfirmStop">Confirm Unlock</button>
+                </div>
+                <p class="modal-error hidden" id="modalError"></p>
+            </div>
+        </div>
+
+        <!-- Toast -->
+        <div class="toast hidden" id="toast"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
