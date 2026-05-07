@@ -90,6 +90,11 @@ mkdir -p "$CONFIG_DIR"
 chmod 700 "$CONFIG_DIR"
 chown root:wheel "$CONFIG_DIR"
 
+# Save primary user so daemon can assign socket permissions
+REAL_USER="${SUDO_USER:-$USER}"
+echo "$REAL_USER" > "$CONFIG_DIR/user"
+chmod 644 "$CONFIG_DIR/user"
+
 # ── Copy files ────────────────────────────────────────────────────────────────
 echo -e "${CYAN}  Installing daemon → ${DAEMON_DST}${NC}"
 cp "$DAEMON_SRC" "$DAEMON_DST"
@@ -153,6 +158,16 @@ BACKUP="${CONFIG_DIR}/hosts.backup.$(date +%Y%m%d_%H%M%S)"
 echo -e "${CYAN}  Backing up /etc/hosts → ${BACKUP}${NC}"
 cp /private/etc/hosts "$BACKUP"
 chmod 600 "$BACKUP"
+
+# ── Install log rotation ──────────────────────────────────────────────────────
+NEWSYSLOG_SRC="${SCRIPT_DIR}/forcefocus.newsyslog.conf"
+NEWSYSLOG_DST="/etc/newsyslog.d/forcefocus.conf"
+if [[ -f "$NEWSYSLOG_SRC" ]]; then
+    echo -e "${CYAN}  Installing log rotation config...${NC}"
+    cp "$NEWSYSLOG_SRC" "$NEWSYSLOG_DST"
+    chmod 644 "$NEWSYSLOG_DST"
+    echo -e "${GREEN}  ✓ Log rotation configured.${NC}"
+fi
 
 # ── Load the LaunchDaemon ─────────────────────────────────────────────────────
 echo -e "${CYAN}  Loading LaunchDaemon...${NC}"

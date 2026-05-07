@@ -27,6 +27,7 @@ def send_to_daemon(cmd: dict) -> dict:
         sock.settimeout(10)
         sock.connect(SOCK_PATH)
         sock.sendall(json.dumps(cmd).encode("utf-8"))
+        sock.shutdown(socket.SHUT_WR)  # Signal end of message
         chunks = []
         while True:
             try:
@@ -50,12 +51,30 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
         """Suppress default logging noise."""
         pass
 
+    def _is_origin_allowed(self) -> bool:
+        """Check if the Origin header matches allowed origins."""
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        if origin in ("http://localhost:7070", "http://127.0.0.1:7070"):
+            return True
+        if origin.startswith("chrome-extension://"):
+            return True
+        return False
+
+    def _get_cors_origin(self) -> str:
+        """Return the allowed origin for CORS headers."""
+        origin = self.headers.get("Origin")
+        if origin and (origin in ("http://localhost:7070", "http://127.0.0.1:7070") or origin.startswith("chrome-extension://")):
+            return origin
+        return "http://127.0.0.1:7070"
+
     def _send_json(self, data: dict, status: int = 200):
         body = json.dumps(data).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self._get_cors_origin())
         self.end_headers()
         self.wfile.write(body)
 
@@ -83,8 +102,11 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _read_body(self) -> dict:
+        MAX_BODY = 65536  # 64KB
         length = int(self.headers.get("Content-Length", 0))
         if length == 0:
+            return {}
+        if length > MAX_BODY:
             return {}
         raw = self.rfile.read(length).decode("utf-8")
         try:
@@ -97,6 +119,10 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
+
+        if path.startswith("/api/") and not self._is_origin_allowed():
+            self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
+            return
 
         if path == "/api/status":
             self._send_json(send_to_daemon({"action": "status"}))
@@ -112,6 +138,11 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
+        
+        if not self._is_origin_allowed():
+            self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
+            return
+            
         body = self._read_body()
 
         if path == "/api/start":
@@ -119,6 +150,10 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
                 "action": "start",
                 "duration_minutes": body.get("duration", 120),
                 "mode": body.get("mode", "blacklist"),
+                "session_type": body.get("session_type", "standard"),
+                "focus_minutes": body.get("focus_minutes", 25),
+                "break_minutes": body.get("break_minutes", 5),
+                "cycles": body.get("cycles", 4),
             }
             self._send_json(send_to_daemon(cmd))
 
@@ -127,13 +162,24 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
             self._send_json(send_to_daemon(cmd))
 
         elif path.startswith("/api/lists/"):
-            list_name = path.split("/")[-1]
-            cmd = {
-                "action": "add_domain",
-                "list": list_name,
-                "domain": body.get("domain", ""),
-            }
-            self._send_json(send_to_daemon(cmd))
+            parts = path.strip("/").split("/")
+            # /api/lists/blacklist/bulk
+            if len(parts) == 4 and parts[3] == "bulk":
+                list_name = parts[2]
+                cmd = {
+                    "action": "add_domains",
+                    "list": list_name,
+                    "domains": body.get("domains", []),
+                }
+                self._send_json(send_to_daemon(cmd))
+            else:
+                list_name = parts[-1]
+                cmd = {
+                    "action": "add_domain",
+                    "list": list_name,
+                    "domain": body.get("domain", ""),
+                }
+                self._send_json(send_to_daemon(cmd))
 
         else:
             self._send_json({"status": "error", "message": "Unknown endpoint."}, 404)
@@ -141,6 +187,10 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
+
+        if not self._is_origin_allowed():
+            self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
+            return
 
         # /api/lists/blacklist/reddit.com
         parts = path.strip("/").split("/")
@@ -159,7 +209,7 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         """Handle CORS preflight."""
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self._get_cors_origin())
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()

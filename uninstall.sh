@@ -61,17 +61,17 @@ if [[ -f "$KS_HASH_FILE" ]]; then
         exit 1
     fi
 
-    VERIFY_RESULT=$($PYTHON_BIN -c "
-import json, hashlib, sys
+    VERIFY_RESULT=$(printf '%s' "$PASSPHRASE" | $PYTHON_BIN -c "
+import json, hashlib, hmac, sys
 try:
     stored = json.load(open('${KS_HASH_FILE}'))
     salt = bytes.fromhex(stored['salt'])
     expected = stored['hash']
     computed = hashlib.pbkdf2_hmac('sha256', sys.stdin.buffer.read(), salt, 100000).hex()
-    print('OK' if computed == expected else 'FAIL')
+    print('OK' if hmac.compare_digest(computed, expected) else 'FAIL')
 except Exception as e:
     print(f'ERROR:{e}')
-" <<< "$PASSPHRASE" 2>&1)
+" 2>&1)
 
     if [[ "$VERIFY_RESULT" != "OK" ]]; then
         echo -e "${RED}  ✗ Invalid passphrase. Uninstall aborted.${NC}"
@@ -147,7 +147,7 @@ echo -e "${GREEN}  ✓ DNS cache flushed.${NC}"
 
 # ── Restore DNS servers (critical for whitelist mode) ─────────────────────────
 echo -e "${CYAN}  Restoring DNS servers to DHCP defaults...${NC}"
-for svc in $(networksetup -listallnetworkservices 2>/dev/null | tail -n +2); do
+networksetup -listallnetworkservices 2>/dev/null | tail -n +2 | while IFS= read -r svc; do
     svc_trimmed=$(echo "$svc" | sed 's/^[* ]*//')
     if [[ -n "$svc_trimmed" ]]; then
         networksetup -setdnsservers "$svc_trimmed" empty 2>/dev/null || true
@@ -186,12 +186,19 @@ if [[ -d "$CONFIG_DIR" ]]; then
 fi
 
 # ── Remove log files ─────────────────────────────────────────────────────────
-for log in /var/log/forcefocus.log /var/log/forcefocus_error.log; do
+for log in /var/log/forcefocus.log /var/log/forcefocus_error.log \
+           /var/log/forcefocus_web.log /var/log/forcefocus_web_error.log; do
     if [[ -e "$log" ]]; then
         rm -f "$log"
         echo -e "    Removed: ${log}"
     fi
 done
+
+# ── Remove log rotation config ───────────────────────────────────────────────
+if [[ -f "/etc/newsyslog.d/forcefocus.conf" ]]; then
+    rm -f "/etc/newsyslog.d/forcefocus.conf"
+    echo -e "    Removed: /etc/newsyslog.d/forcefocus.conf"
+fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""

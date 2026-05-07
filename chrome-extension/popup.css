@@ -141,16 +141,20 @@ body {
     color: var(--text3);
     margin-top: 2px;
 }
+.timer-ring.break .ring-progress {
+    stroke: var(--green);
+    filter: drop-shadow(0 0 8px rgba(34,197,94,0.4));
+}
 
 /* ── Controls ──────────────────────────── */
 .controls { margin-bottom: 12px; }
 
-.mode-row, .dur-row {
+.mode-row, .dur-row, .type-row {
     display: flex;
     gap: 8px;
     margin-bottom: 10px;
 }
-.mode-chip, .dur-chip {
+.mode-chip, .dur-chip, .type-chip, .pomo-chip {
     flex: 1;
     padding: 8px 4px;
     background: rgba(255,255,255,0.02);
@@ -164,10 +168,10 @@ body {
     transition: var(--t);
     text-align: center;
 }
-.mode-chip:hover, .dur-chip:hover {
+.mode-chip:hover, .dur-chip:hover, .type-chip:hover, .pomo-chip:hover {
     background: rgba(255,255,255,0.05);
 }
-.mode-chip.active, .dur-chip.active {
+.mode-chip.active, .dur-chip.active, .type-chip.active, .pomo-chip.active {
     background: rgba(99,102,241,0.1);
     border-color: var(--border-act);
     color: var(--accent);
@@ -215,6 +219,43 @@ body {
 }
 .custom-row input::placeholder { color: var(--text3); }
 
+/* Pomodoro Specifics */
+.pomo-fields {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.pomo-field {
+    flex: 1;
+}
+.pomo-field label {
+    display: block;
+    font-size: 10px;
+    color: var(--text2);
+    margin-bottom: 4px;
+}
+.pomo-field input {
+    width: 100%;
+    padding: 6px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: var(--rs);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    outline: none;
+    text-align: center;
+}
+.pomo-field input:focus {
+    border-color: var(--border-act);
+}
+.pomo-total {
+    font-size: 11px;
+    color: var(--text2);
+    text-align: center;
+    margin-bottom: 10px;
+}
+
 /* ── Active State ──────────────────────── */
 .info-row {
     display: flex;
@@ -224,8 +265,15 @@ body {
     border-bottom: 1px solid var(--border);
 }
 .info-label { color: var(--text2); }
-.info-value { font-weight: 600; }
+.info-value { font-weight: 600; display: flex; align-items: center; gap: 6px; }
 .unlock-val { color: var(--warn); }
+.phase-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.phase-dot.focus { background: var(--red); box-shadow: 0 0 4px var(--red); }
+.phase-dot.break { background: var(--green); box-shadow: 0 0 4px var(--green); }
 
 .btn-stop {
     width: 100%;
