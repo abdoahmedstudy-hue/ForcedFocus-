@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import socket
+import time
 import mimetypes
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -20,28 +21,36 @@ HOST = "127.0.0.1"
 PORT = 7070
 
 
-def send_to_daemon(cmd: dict) -> dict:
+def send_to_daemon(cmd: dict, retries: int = 3) -> dict:
     """Send a JSON command to the daemon via Unix socket."""
-    try:
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(10)
-        sock.connect(SOCK_PATH)
-        sock.sendall(json.dumps(cmd).encode("utf-8"))
-        sock.shutdown(socket.SHUT_WR)  # Signal end of message
-        chunks = []
-        while True:
-            try:
-                chunk = sock.recv(4096)
-                if not chunk:
+    last_error = None
+    for attempt in range(retries):
+        try:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.settimeout(10)
+            sock.connect(SOCK_PATH)
+            sock.sendall(json.dumps(cmd).encode("utf-8"))
+            sock.shutdown(socket.SHUT_WR)  # Signal end of message
+            chunks = []
+            while True:
+                try:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                except socket.timeout:
                     break
-                chunks.append(chunk)
-            except socket.timeout:
-                break
-        sock.close()
-        raw = b''.join(chunks).decode("utf-8")
-        return json.loads(raw)
-    except Exception as exc:
-        return {"status": "error", "message": f"Daemon communication failed: {exc}"}
+            sock.close()
+            raw = b''.join(chunks).decode("utf-8")
+            return json.loads(raw)
+        except (ConnectionRefusedError, FileNotFoundError) as exc:
+            last_error = exc
+            if attempt < retries - 1:
+                time.sleep(1)
+                continue
+        except Exception as exc:
+            return {"status": "error", "message": f"Daemon communication failed: {exc}"}
+    return {"status": "daemon_starting", "message": f"Daemon not ready: {last_error}"}
 
 
 class ForcedFocusHandler(BaseHTTPRequestHandler):

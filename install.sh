@@ -182,43 +182,16 @@ else
     exit 1
 fi
 
-# ── Install Web UI LaunchAgent (runs as user, auto-starts on login) ──────────
-WEB_PLIST_SRC="${SCRIPT_DIR}/com.forcefocus.web.plist"
+# ── Clean up legacy Web UI LaunchAgent ────────────────────────────────────────
 REAL_USER="${SUDO_USER:-$USER}"
 REAL_HOME=$(eval echo "~${REAL_USER}")
-AGENT_DIR="${REAL_HOME}/Library/LaunchAgents"
-WEB_PLIST_DST="${AGENT_DIR}/com.forcefocus.web.plist"
-WEB_PLIST_LABEL="com.forcefocus.web"
-
-if [[ -f "$WEB_PLIST_SRC" ]]; then
-    echo -e "${CYAN}  Installing web LaunchAgent...${NC}"
-    mkdir -p "$AGENT_DIR"
-
-    # Unload existing if present
-    sudo -u "$REAL_USER" launchctl unload "$WEB_PLIST_DST" 2>/dev/null || true
-    # Kill any existing web server
-    pkill -f "forcefocus_web.py" 2>/dev/null || true
-    sleep 1
-
-    cp "$WEB_PLIST_SRC" "$WEB_PLIST_DST"
-    # Update Python path in web plist
-    sed -i '' "s|/usr/local/bin/python3|${PYTHON_BIN}|g" "$WEB_PLIST_DST"
-    chown "${REAL_USER}" "$WEB_PLIST_DST"
-    chmod 644 "$WEB_PLIST_DST"
-
-    sudo -u "$REAL_USER" launchctl load -w "$WEB_PLIST_DST" 2>/dev/null || true
-    sleep 1
-
-    if launchctl list 2>/dev/null | grep -q "$WEB_PLIST_LABEL" || \
-       sudo -u "$REAL_USER" launchctl list 2>/dev/null | grep -q "$WEB_PLIST_LABEL"; then
-        echo -e "${GREEN}  ✓ Web UI auto-start enabled (port 7070).${NC}"
-    else
-        echo -e "${YELLOW}  ⚠ Web LaunchAgent installed but may need login restart.${NC}"
-    fi
-else
-    echo -e "${YELLOW}  ⚠ Web plist not found. Web UI won't auto-start.${NC}"
-    echo -e "    Run 'forcefocus web' manually."
+WEB_PLIST_LEGACY="${REAL_HOME}/Library/LaunchAgents/com.forcefocus.web.plist"
+if [[ -f "$WEB_PLIST_LEGACY" ]]; then
+    sudo -u "$REAL_USER" launchctl unload "$WEB_PLIST_LEGACY" 2>/dev/null || true
+    rm -f "$WEB_PLIST_LEGACY"
+    echo -e "${CYAN}  Cleaned up legacy web LaunchAgent.${NC}"
 fi
+pkill -f "forcefocus_web.py" 2>/dev/null || true
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
@@ -227,8 +200,7 @@ echo -e "${GREEN}  ✓ ForcedFocus installed successfully!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo -e "  ${BOLD}What starts automatically:${NC}"
-echo -e "    • Daemon (root)  — blocks sites at system level"
-echo -e "    • Web UI (user)  — http://localhost:7070"
+echo -e "    • Daemon (root)  — blocks sites + web UI (http://localhost:7070)"
 echo ""
 echo -e "  ${BOLD}Quick Start:${NC}"
 echo -e "    forcefocus start --duration 120   # Block for 2 hours"

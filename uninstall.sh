@@ -104,7 +104,6 @@ if [[ -f "$WEB_PLIST_DST" ]]; then
 else
     echo -e "${YELLOW}  ⚠ Web LaunchAgent not found.${NC}"
 fi
-pkill -f "forcefocus_web.py" 2>/dev/null || true
 
 # ── Remove uchg flag from /etc/hosts ──────────────────────────────────────────
 echo -e "${CYAN}  Removing immutable flag from /etc/hosts...${NC}"

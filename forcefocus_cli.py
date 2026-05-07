@@ -7,7 +7,7 @@ Usage:
     forcefocus stop  --key PASSPHRASE       Request delayed unlock (20 min)
     forcefocus status                       Show current session state
     forcefocus set-key                      Set/change kill-switch passphrase
-    forcefocus web                          Start web UI on localhost:7070
+    forcefocus web                          Start standalone web UI (dev only)
 """
 
 import os
@@ -319,7 +319,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_setkey.set_defaults(func=cmd_set_key)
 
     # web
-    p_web = sub.add_parser("web", help="Start web UI on localhost:7070")
+    p_web = sub.add_parser("web", help="Start standalone web UI (dev only, daemon embeds it)")
     p_web.set_defaults(func=cmd_web)
 
     return parser
