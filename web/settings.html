@@ -21,41 +21,74 @@
             </div>
         </header>
 
-        <main class="dashboard-main" style="max-width: 600px; margin: 0 auto;">
-            <section class="card glass">
-                <div class="card-header">
-                    <h3 style="margin: 0;">🎵 Sound Mapping</h3>
-                    <p style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">
-                        Select which audio files play for specific events.
-                    </p>
-                </div>
-                
-                <div class="settings-grid" id="settingsGrid">
-                    <div class="loading">Fetching audio files...</div>
-                </div>
+        <main class="dashboard-main">
+            <div class="grid-container">
+                <!-- Left: Sound Mapping -->
+                <section class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">🎵 Sound Mapping</h3>
+                        <p class="list-desc">Select which audio files play for specific events.</p>
+                    </div>
+                    
+                    <div class="settings-grid" id="settingsGrid" style="flex: 1;">
+                        <div class="loading">Fetching audio files...</div>
+                    </div>
 
-                <div class="upload-section">
-                    <label class="upload-label">
-                        <span>📤 Upload New Sound (.mp3)</span>
-                        <input type="file" id="fileInput" accept="audio/mpeg" hidden>
-                        <button class="btn-upload" id="btnTriggerUpload">Choose File</button>
-                    </label>
-                    <div id="uploadStatus" class="upload-status"></div>
-                </div>
+                    <div class="upload-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border);">
+                        <label class="upload-label">
+                            <span style="font-size: 13px; color: var(--text-secondary);">📤 Upload New Sound (.mp3)</span>
+                            <input type="file" id="fileInput" accept="audio/mpeg" hidden>
+                            <button class="btn-upload" id="btnTriggerUpload">Choose File</button>
+                        </label>
+                        <div id="uploadStatus" class="upload-status"></div>
+                    </div>
 
-                <div class="library-section">
-                    <h4>📂 Sound Library</h4>
-                    <div class="sound-list" id="soundLibrary">
-                        <!-- Dynamically populated -->
+                    <div style="margin-top: 24px;">
+                        <button class="btn secondary" id="btnSaveSettings" style="width: 100%;">Save Preferences</button>
+                    </div>
+                </section>
+
+                <!-- Right: Domain Groups -->
+                <section class="card">
+                    <div class="card-header">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <h3 class="card-title">🛡️ Domain Groups</h3>
+                            <button class="btn-add" id="btnNewGroup">+</button>
+                        </div>
+                        <p class="list-desc">Create sets of websites to block together.</p>
+                    </div>
+
+                    <div class="group-list scroll-area" id="groupList" style="flex: 1; margin-top: 12px; max-height: 400px;">
+                        <div class="loading">Loading groups...</div>
+                    </div>
+                </section>
+            </div>
+
+            <div style="margin-top: 40px; display: flex; justify-content: center;">
+                <a href="index.html" class="btn btn-ghost" style="max-width: 250px; text-decoration: none;">Back to Dashboard</a>
+            </div>
+        </main>
+
+        <!-- Group Edit Modal -->
+        <div class="modal-overlay hidden" id="groupModal">
+            <div class="modal card glass" style="max-width: 500px; width: 90%;">
+                <h2 id="groupModalTitle">🛡️ New Group</h2>
+                <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 20px;">
+                    <div class="pomo-field">
+                        <label>Group Name</label>
+                        <input type="text" id="groupNameInput" placeholder="e.g. Social Media">
+                    </div>
+                    <div class="pomo-field">
+                        <label>Domains (one per line)</label>
+                        <textarea id="groupDomainsInput" style="width: 100%; min-height: 150px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--radius-xs); color: var(--text-primary); padding: 12px; font-family: inherit; font-size: 13px; outline: none; resize: vertical;" placeholder="reddit.com&#10;twitter.com"></textarea>
                     </div>
                 </div>
-
-                <div style="margin-top: 32px; display: flex; gap: 12px;">
-                    <button class="btn secondary" id="btnSaveSettings" style="flex: 1;">Save Preferences</button>
-                    <a href="index.html" class="btn" style="flex: 1; text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.05); color: var(--text-primary);">Cancel</a>
+                <div class="modal-actions" style="margin-top: 24px;">
+                    <button class="btn secondary" id="btnSaveGroup">Save Group</button>
+                    <button class="btn" id="btnCancelGroup" style="background: rgba(255,255,255,0.05); color: var(--text-primary);">Cancel</button>
                 </div>
-            </section>
-        </main>
+            </div>
+        </div>
 
         <div class="toast hidden" id="toast"></div>
     </div>

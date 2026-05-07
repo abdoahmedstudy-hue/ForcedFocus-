@@ -3,14 +3,17 @@ let currentMode = 'blacklist';
 let currentType = 'standard';
 let totalSecs = 0;
 let countdownInterval = null;
+let apiToken = '';
 
 const AudioManager = {
     settings: {},
+    _current: null,
     play: function(type) {
         const file = this.settings[`sound_${type}`];
         if (!file) return;
-        const audio = new Audio('/sounds/' + encodeURIComponent(file));
-        audio.play().catch(e => console.log('Audio error:', e));
+        if (this._current) { this._current.pause(); this._current = null; }
+        this._current = new Audio('/sounds/' + encodeURIComponent(file));
+        this._current.play().catch(e => console.log('Audio error:', e));
     }
 };
 
@@ -57,14 +60,31 @@ const els = {
 };
 
 async function api(method, path, body = null) {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    const headers = { 'Content-Type': 'application/json' };
+    if (method !== 'GET' && apiToken) headers['X-API-Token'] = apiToken;
+    const opts = { method, headers };
     if (body) opts.body = JSON.stringify(body);
     try {
         const res = await fetch(API + path, opts);
+        // S4: Auto-refresh token on 401 (daemon restarted)
+        if (res.status === 401 && method !== 'GET') {
+            await loadApiToken();
+            headers['X-API-Token'] = apiToken;
+            const retry = await fetch(API + path, { method, headers, body: opts.body });
+            return await retry.json();
+        }
         return await res.json();
     } catch {
         return { status: 'error', message: 'Offline' };
     }
+}
+
+async function loadApiToken() {
+    try {
+        const res = await fetch(API + '/api/token');
+        const data = await res.json();
+        if (data.token) apiToken = data.token;
+    } catch (e) { console.error('Token load failed:', e); }
 }
 
 function fmt(secs) {
@@ -326,8 +346,9 @@ window.onPopoverHide = () => {
     if (countdownInterval) clearInterval(countdownInterval);
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     initEvents();
+    await loadApiToken();
     // S8: Load settings and refresh status immediately, don't wait for onPopoverShow
     loadSettings();
     refresh();

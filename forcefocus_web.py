@@ -3,6 +3,15 @@
 ForcedFocus Web Server — HTTP API + static file server.
 Bridges the web UI to the daemon via Unix socket.
 Runs on localhost:7070 (not exposed to network).
+
+⚠️  DEPRECATED: This standalone web server is REDUNDANT.
+    The daemon (forcefocus_daemon.py) embeds its own HTTP server
+    (EmbeddedHTTPServer + EmbeddedWebHandler) which is the canonical
+    server started by the LaunchDaemon plist.
+
+    This file is retained only for development/debugging purposes.
+    It is NOT installed or started in production.
+    Do NOT add new features here — use the daemon's embedded server instead.
 """
 
 import os
@@ -137,6 +146,8 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
             self._send_json(send_to_daemon({"action": "status"}))
         elif path == "/api/lists":
             self._send_json(send_to_daemon({"action": "get_lists"}))
+        elif path == "/api/groups":
+            self._send_json(send_to_daemon({"action": "get_groups"}))
         elif path == "/" or path == "":
             self._send_file(WEB_DIR / "index.html")
         elif path == "/menubar":
@@ -165,6 +176,7 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
                 "focus_minutes": body.get("focus_minutes", 25),
                 "break_minutes": body.get("break_minutes", 5),
                 "cycles": body.get("cycles", 4),
+                "groups": body.get("groups", []),
             }
             if "schedule_in" in body:
                 cmd["schedule_in_minutes"] = body["schedule_in"]
@@ -196,6 +208,14 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
                 }
                 self._send_json(send_to_daemon(cmd))
 
+        elif path == "/api/groups":
+            cmd = {
+                "action": "add_group",
+                "name": body.get("name", ""),
+                "domains": body.get("domains", []),
+            }
+            self._send_json(send_to_daemon(cmd))
+
         else:
             self._send_json({"status": "error", "message": "Unknown endpoint."}, 404)
 
@@ -207,8 +227,8 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
             self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
             return
 
-        # /api/lists/blacklist/reddit.com
         parts = path.strip("/").split("/")
+        # /api/lists/blacklist/reddit.com
         if len(parts) >= 4 and parts[0] == "api" and parts[1] == "lists":
             list_name = parts[2]
             domain = "/".join(parts[3:])
@@ -216,6 +236,12 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
                 "action": "remove_domain",
                 "list": list_name,
                 "domain": domain,
+            }
+            self._send_json(send_to_daemon(cmd))
+        elif len(parts) == 3 and parts[0] == "api" and parts[1] == "groups":
+            cmd = {
+                "action": "remove_group",
+                "name": parts[2],
             }
             self._send_json(send_to_daemon(cmd))
         else:

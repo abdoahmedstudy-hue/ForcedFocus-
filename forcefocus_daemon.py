@@ -21,6 +21,7 @@ import logging
 import threading
 import subprocess
 import mimetypes
+import re
 from pathlib import Path
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -38,6 +39,8 @@ CONFIG_DIR        = Path("/etc/forcefocus")
 SESSION_LOCK      = CONFIG_DIR / "session.lock"
 KS_HASH_FILE      = CONFIG_DIR / "ks_hash"
 LISTS_FILE        = CONFIG_DIR / "lists.json"
+GROUPS_FILE       = CONFIG_DIR / "groups.json"
+API_TOKEN_FILE    = CONFIG_DIR / "api_token"
 SOCK_PATH         = "/var/run/forcefocus.sock"
 HOSTS_PATH        = Path("/private/etc/hosts")
 WEB_HOST          = "127.0.0.1"
@@ -112,9 +115,60 @@ DOH_BLOCK_DOMAINS = [
     "dns.google.com",
     "dns.tuna.tsinghua.edu.cn",
     "doh.pub",
+    "doh.li",
+    "doh.tiar.app",
+    "doh.seby.io",
+    "dns.flatuslifir.is",
+    "doh.pwneddns.net",
+    "doh-jp.blahdns.com",
+    "doh-de.blahdns.com",
+    "doh-fi.blahdns.com",
+    "dns.rubyfish.cn",
     "dot.pub",
     "dns.alidns.com",
-    "doh.360.cn",
+    "doh.360.cn"
+]
+
+VPN_PROCESSES = [
+    "Tailscale", "WireGuard", "Cisco AnyConnect", "Tunnelblick", 
+    "NordVPN", "ExpressVPN", "Mullvad", "ProtonVPN", "Surfshark",
+    "GlobalProtect", "ivpn-gui", "Windscribe"
+]
+
+DOH_IPS = [
+    "1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", 
+    "9.9.9.9", "149.112.112.112",
+    "208.67.222.222", "208.67.220.220",
+    "45.11.45.11", "94.140.14.14"
+]
+
+# Processes that can be used to bypass blocking
+RESTRICTED_PROCESSES = [
+    # VPNs & Tunnels
+    "Tailscale", "WireGuard", "Cisco AnyConnect", "Tunnelblick", 
+    "NordVPN", "ExpressVPN", "Mullvad", "ProtonVPN", "Surfshark",
+    "GlobalProtect", "ivpn-gui", "Windscribe", "CloudflareWARP",
+    # Unmanaged Browsers (that might bypass system policies)
+    "Opera", "Vivaldi", "TorBrowser", "Arc", "Sidekick", "SigmaOS", 
+    "Orion", "Waterfox", "Pale Moon", "Ghostery",
+    # Potential Bypass Tools
+    "Activity Monitor"
+]
+
+BROWSER_RESISTANCE_URLS = [
+    "chrome://settings", "chrome://extensions", "chrome://flags",
+    "chrome://policy", "chrome://inspect", "chrome://net-internals",
+    "chrome://serviceworker-internals", "chrome://webuijserror",
+    "chrome://badcastcrash", "chrome://inducebrowsercrashforrealz",
+    "chrome://inducebrowserdcheckforrealz", "chrome://crash",
+    "chrome://crash/rust", "chrome://crashdump", "chrome://kill",
+    "chrome://hang", "chrome://shorthang", "chrome://gpuclean",
+    "chrome://gpucrash", "chrome://gpuhang", "chrome://memory-exhaust",
+    "chrome://memory-pressure-critical", "chrome://memory-pressure-moderate",
+    "chrome://quit", "chrome://restart",
+    "edge://settings", "edge://extensions", "edge://flags",
+    "edge://policy", "edge://inspect", "about:config", "about:addons",
+    "about:policies"
 ]
 
 def setup_logging():
@@ -179,7 +233,7 @@ class LocalDNSProxy(threading.Thread):
                 for s in temp_socks:
                     try:
                         s.close()
-                    except:
+                    except OSError:
                         pass
                 time.sleep(delay)
                 delay = min(delay * 2, 10.0)
@@ -218,7 +272,7 @@ class LocalDNSProxy(threading.Thread):
         try:
             for s in getattr(self, "socks", []):
                 s.close()
-        except:
+        except OSError:
             pass
 
     def _extract_domain(self, data: bytes) -> str:
@@ -314,6 +368,8 @@ class ForcedFocusDaemon:
         logging.info("ForcedFocus daemon v2 starting (PID %d).", os.getpid())
         self._ensure_config_dir()
         self._ensure_lists_file()
+        self._ensure_groups_file()
+        self._generate_api_token()
         self._install_signal_handlers()
         # Restore session BEFORE starting watchdog to avoid race (C2)
         with self.lock:
@@ -338,6 +394,33 @@ class ForcedFocusDaemon:
             LISTS_FILE.write_text(json.dumps({"blacklist": [], "whitelist": []}, indent=2))
             os.chmod(str(LISTS_FILE), 0o644)
 
+    @staticmethod
+    def _ensure_groups_file():
+        if not GROUPS_FILE.exists():
+            GROUPS_FILE.write_text(json.dumps({}, indent=2))
+            os.chmod(str(GROUPS_FILE), 0o644)
+
+    def _generate_api_token(self):
+        """Generate a per-launch API token for HTTP mutation endpoint auth."""
+        import secrets
+        self.api_token = secrets.token_hex(32)
+        try:
+            API_TOKEN_FILE.write_text(self.api_token)
+            os.chmod(str(API_TOKEN_FILE), 0o600)
+            # Chown to the real user so the web UI can read it
+            user_file = Path("/etc/forcefocus/user")
+            if user_file.exists():
+                import pwd
+                username = user_file.read_text().strip()
+                try:
+                    pw = pwd.getpwnam(username)
+                    os.chown(str(API_TOKEN_FILE), pw.pw_uid, pw.pw_gid)
+                except (KeyError, OSError):
+                    pass
+            logging.info("API token generated and written to %s", API_TOKEN_FILE)
+        except OSError as exc:
+            logging.error("Failed to write API token: %s", exc)
+
     def _install_signal_handlers(self):
         def _handler(signum, _frame):
             name = signal.Signals(signum).name
@@ -359,6 +442,15 @@ class ForcedFocusDaemon:
     def _save_lists(self, lists: dict):
         self._atomic_write_json(LISTS_FILE, lists, indent=2)
 
+    def _load_groups(self) -> dict:
+        try:
+            return json.loads(GROUPS_FILE.read_text())
+        except Exception:
+            return {}
+
+    def _save_groups(self, groups: dict):
+        self._atomic_write_json(GROUPS_FILE, groups, indent=2)
+
     @staticmethod
     def _atomic_write_json(path: Path, data: dict, indent=None):
         temp_path = path.with_suffix('.tmp')
@@ -378,7 +470,7 @@ class ForcedFocusDaemon:
     @staticmethod
     def _validate_domain(domain: str) -> bool:
         """Validate domain format: ASCII alphanumeric + hyphens + dots, reasonable length."""
-        import re
+        # re imported at module level
         if not domain or len(domain) > 253:
             return False
         if any(c in domain for c in '\n\r\t \\/'):
@@ -444,6 +536,39 @@ class ForcedFocusDaemon:
                 lists[list_name].remove(domain)
                 self._save_lists(lists)
             return {"status": "ok", "message": f"Removed {domain} from {list_name}.", "lists": lists}
+
+    def _cmd_get_groups(self) -> dict:
+        return {"status": "ok", "groups": self._load_groups()}
+
+    def _cmd_add_group(self, cmd: dict) -> dict:
+        name = cmd.get("name", "").strip()
+        domains = cmd.get("domains", [])
+        if not name:
+            return {"status": "error", "message": "Group name is required."}
+        with self.lock:
+            if self.active:
+                return {"status": "error", "message": "Cannot modify groups during active session."}
+            groups = self._load_groups()
+            valid_domains = [d.strip().lower() for d in domains if self._validate_domain(d.strip().lower())]
+            if not valid_domains and domains:
+                return {"status": "error", "message": "None of the provided domains are valid."}
+            groups[name] = valid_domains
+            self._save_groups(groups)
+            return {"status": "ok", "message": f"Group '{name}' saved.", "groups": groups}
+
+    def _cmd_remove_group(self, cmd: dict) -> dict:
+        name = cmd.get("name", "").strip()
+        if not name:
+            return {"status": "error", "message": "Group name is required."}
+        with self.lock:
+            if self.active:
+                return {"status": "error", "message": "Cannot modify groups during active session."}
+            groups = self._load_groups()
+            if name in groups:
+                del groups[name]
+                self._save_groups(groups)
+                return {"status": "ok", "message": f"Group '{name}' removed.", "groups": groups}
+            return {"status": "error", "message": f"Group '{name}' not found."}
 
     # ── Session Management ────────────────────────────────────────────────────
 
@@ -702,9 +827,11 @@ class ForcedFocusDaemon:
                 self.session_expiry = datetime.now() + timedelta(minutes=pomo_total)
                 self._mono_session_end = now_mono + (pomo_total * 60)
 
+            # MEDIUM #1 fix: Use self.session_expiry (post-Pomodoro override)
+            # instead of the stale local `expiry` variable.
             session_data = {
                 "started": datetime.now().isoformat(),
-                "expiry": expiry.isoformat(),
+                "expiry": self.session_expiry.isoformat(),
                 "mode": mode,
                 "duration_minutes": duration_minutes,
                 "session_type": self.session_type,
@@ -731,16 +858,26 @@ class ForcedFocusDaemon:
             if self.session_type == "pomodoro":
                 self.pomo_phase_remaining = self.pomo_focus_minutes * 60
 
+            selected_groups = cmd.get("groups", [])
             if mode == "whitelist":
                 self.original_dns = self._get_current_dns_servers()
                 if self.session_type == "rescue":
                     wl_domains = []
                 else:
                     wl_domains = self._load_lists().get("whitelist", [])
-                self.blocked_domains = wl_domains  # Used by DNS proxy as allow-list
+                    if selected_groups:
+                        groups = self._load_groups()
+                        for gname in selected_groups:
+                            if gname in groups:
+                                wl_domains.extend(groups[gname])
+
+                # MEDIUM #4: In whitelist mode, blocked_domains actually holds the ALLOW-list.
+                # The DNS proxy checks domains against this list to decide what to forward.
+                # Renaming would require changes across session persistence + DNS proxy.
+                self.blocked_domains = wl_domains
                 session_data["blocked_domains"] = self.blocked_domains
                 session_data["original_dns"] = self.original_dns
-                SESSION_LOCK.write_text(json.dumps(session_data))
+                self._atomic_write_json(SESSION_LOCK, session_data)
                 self._enforce_whitelist()
                 count = len(wl_domains)
                 self.whitelist_count = count
@@ -751,8 +888,9 @@ class ForcedFocusDaemon:
                 else:
                     msg = f"Whitelist mode: {count} domains allowed for {duration_minutes} min."
             else:
-                self.blocked_domains = self._get_blacklist_domains()
-                SESSION_LOCK.write_text(json.dumps(session_data))
+                self.blocked_domains = self._get_blacklist_domains(selected_groups)
+                session_data["blocked_domains"] = self.blocked_domains
+                self._atomic_write_json(SESSION_LOCK, session_data)
                 self._enforce_block()
                 count = len(self.blocked_domains)
                 if self.session_type == "pomodoro":
@@ -832,6 +970,20 @@ class ForcedFocusDaemon:
             # C3: Use monotonic time for all remaining-seconds fields
             now_mono = get_continuous_time()
             rem = int(max(0, self._mono_session_end - now_mono))
+
+            # Safety net: if session is expired but watchdog hasn't cleaned up,
+            # trigger cleanup now to prevent stuck sessions
+            if rem <= 0 and self._mono_session_end > 0 and now_mono >= self._mono_session_end:
+                logging.warning("Status safety-net: session expired but not cleaned up. Forcing cleanup.")
+                self._cleanup_session()
+                return {
+                    "status": "ok",
+                    "active": False,
+                    "state": "idle",
+                    "mode": None,
+                    "message": "Session expired.",
+                    "schedules": schedules_res
+                }
             result = {
                 "status": "ok",
                 "active": True,
@@ -862,9 +1014,16 @@ class ForcedFocusDaemon:
 
     # ── Blacklist Enforcement ─────────────────────────────────────────────────
 
-    def _get_blacklist_domains(self) -> list[str]:
+    def _get_blacklist_domains(self, selected_groups: list[str] = None) -> list[str]:
         lists = self._load_lists()
         bl = lists.get("blacklist", [])
+        
+        if selected_groups:
+            groups = self._load_groups()
+            for gname in selected_groups:
+                if gname in groups:
+                    bl.extend(groups[gname])
+        
         if bl:
             expanded = set()
             for d in bl:
@@ -911,6 +1070,7 @@ class ForcedFocusDaemon:
                 logging.warning("chflags uchg failed with code %d: %s", result.returncode, result.stderr.decode() if result.stderr else "unknown error")
                 
             self._enforce_firewall(True)
+            self._enforce_browser_policies(True)
             self._clear_browser_caches()
             self._flush_dns()
             self.hosts_hash = hashlib.sha256(content.encode()).hexdigest()
@@ -1162,6 +1322,7 @@ class ForcedFocusDaemon:
                     self.dns_proxy = None
                 self._restore_dns()
             self._enforce_firewall(False)
+            self._enforce_browser_policies(False)
             self._flush_dns()
         except Exception as exc:
             logging.error("cleanup_session error: %s", exc)
@@ -1207,7 +1368,14 @@ class ForcedFocusDaemon:
         subprocess.run(["killall", "-USR1", "mDNSResponder"], capture_output=True, timeout=5)
 
     def _clear_browser_caches(self):
-        """Deep clean of browser caches and service workers across all profiles."""
+        """Deep clean of browser caches and service workers across all profiles.
+        
+        Can be disabled via settings: {"aggressive_cache_clear": false}
+        """
+        # LOW #4: Allow users to opt out of aggressive cache clearing
+        if not self.settings.get("aggressive_cache_clear", True):
+            logging.debug("Aggressive cache clearing disabled by settings.")
+            return
         try:
             user_file = Path("/etc/forcefocus/user")
             if not user_file.exists(): 
@@ -1275,25 +1443,121 @@ class ForcedFocusDaemon:
             logging.error("Failed to clear browser caches: %s", exc)
 
     def _enforce_firewall(self, enable: bool):
-        """Block QUIC (UDP 443) to force browsers to fallback to TCP/DNS blocking.
-        
-        Uses macOS pfctl with an anchor to avoid touching /etc/pf.conf.
-        """
+        """Nuclear firewall enforcement: Blocks QUIC, DoT, and known DoH IPs."""
         try:
             if enable:
                 # 1. Enable PF
                 subprocess.run(["pfctl", "-e"], capture_output=True, timeout=5)
-                # 2. Load rules into anchor
-                rules = "block drop out proto udp from any to any port 443\n"
+                # 2. Construct nuclear ruleset
+                rules = [
+                    "block drop out proto udp from any to any port 443", # QUIC bypass
+                    "block drop out proto {tcp udp} from any to any port 853", # DNS-over-TLS bypass
+                    "block drop out proto {tcp udp} from any to any port {1080 8080 3128 9050 9051}", # Proxy/Tor bypass
+                ]
+                
+                # Block known DoH provider IPs to prevent direct IP-based bypass
+                for ip in DOH_IPS:
+                    rules.append(f"block drop out from any to {ip}")
+                
+                rules_str = "\n".join(rules) + "\n"
                 process = subprocess.Popen(["pfctl", "-a", "forcefocus", "-f", "-"], 
                                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                process.communicate(input=rules)
-                logging.info("Firewall: QUIC (UDP 443) blocked.")
+                process.communicate(input=rules_str)
+                
+                # 3. Kill any existing states for blocked domains (clears cached connections)
+                # Targeted state kill for common bypass ports.
+                subprocess.run(["pfctl", "-k", "0.0.0.0/0", "-k", "443"], capture_output=True)
+                subprocess.run(["pfctl", "-k", "0.0.0.0/0", "-k", "80"], capture_output=True)
+                
+                logging.info("Firewall: Nuclear rules applied (QUIC/DoT/Proxies/DoH IPs blocked).")
             else:
                 subprocess.run(["pfctl", "-a", "forcefocus", "-F", "all"], capture_output=True, timeout=5)
                 logging.info("Firewall: rules cleared.")
         except Exception as exc:
             logging.error("Firewall enforcement failed: %s", exc)
+
+    def _enforce_browser_policies(self, enable: bool):
+        """Inject managed policies into browsers to block internal settings/extensions."""
+        try:
+            # Paths for managed preferences
+            managed_pref_dir = Path("/Library/Managed Preferences")
+            managed_pref_dir.mkdir(parents=True, exist_ok=True)
+            
+            targets = [
+                managed_pref_dir / "com.google.Chrome.plist",
+                managed_pref_dir / "com.microsoft.Edge.plist"
+            ]
+
+            if enable:
+                # 1. Chrome/Edge Managed Policies
+                # We use plutil to create a clean XML plist
+                import plistlib
+                policy_data = {
+                    "URLBlocklist": BROWSER_RESISTANCE_URLS
+                }
+                plist_bytes = plistlib.dumps(policy_data)
+                
+                for path in targets:
+                    path.write_bytes(plist_bytes)
+                    # Force ownership to root
+                    os.chmod(path, 0o644)
+                
+                # 2. Firefox Policies (distribution/policies.json)
+                # We try to find Firefox in common locations
+                ff_paths = [
+                    Path("/Applications/Firefox.app/Contents/Resources/distribution/policies.json"),
+                    Path("/Applications/Firefox.app/Contents/MacOS/distribution/policies.json")
+                ]
+                ff_policy = {
+                    "policies": {
+                        "BlockAboutConfig": True,
+                        "BlockAboutAddons": True,
+                        "BlockAboutSupport": True
+                    }
+                }
+                for p in ff_paths:
+                    try:
+                        p.parent.mkdir(parents=True, exist_ok=True)
+                        p.write_text(json.dumps(ff_policy, indent=2))
+                    except Exception:
+                        pass
+                
+                logging.info("Browser Policies: Resistance URLs blocked via managed preferences.")
+            else:
+                # Cleanup policies
+                for path in targets:
+                    path.unlink(missing_ok=True)
+                
+                # Firefox cleanup
+                ff_paths = [
+                    Path("/Applications/Firefox.app/Contents/Resources/distribution/policies.json"),
+                    Path("/Applications/Firefox.app/Contents/MacOS/distribution/policies.json")
+                ]
+                for p in ff_paths:
+                    p.unlink(missing_ok=True)
+                    
+                logging.info("Browser Policies: Managed preferences cleared.")
+        except Exception as exc:
+            logging.error("Browser policy enforcement failed: %s", exc)
+
+    def _kill_vpns(self):
+        """Terminate known VPN processes that could bypass host-file blocking."""
+        for proc in VPN_PROCESSES:
+            try:
+                # Targeted killall
+                subprocess.run(["killall", "-9", proc], capture_output=True, timeout=2)
+            except Exception:
+                pass
+
+    def _kill_restricted_apps(self):
+        """Terminate restricted processes (VPNs, bypass browsers, tools) during active sessions."""
+        for proc in RESTRICTED_PROCESSES:
+            try:
+                subprocess.run(["killall", "-9", proc], capture_output=True, timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+            except OSError:
+                pass
 
     # ── Watchdog ──────────────────────────────────────────────────────────────
 
@@ -1409,6 +1673,7 @@ class ForcedFocusDaemon:
             return {"status": "error", "message": f"Delete failed: {str(exc)}"}
 
     def _cmd_upload_sound(self, cmd: dict) -> dict:
+        MAX_SOUND_SIZE = 5 * 1024 * 1024  # 5MB limit per sound file
         filename = cmd.get("filename", "").strip()
         data_b64 = cmd.get("data", "")
         
@@ -1420,17 +1685,29 @@ class ForcedFocusDaemon:
             
         # Sanitize filename
         safe_name = "".join(c for c in filename if c.isalnum() or c in "._- ")
+        if not safe_name:
+            return {"status": "error", "message": "Invalid filename."}
         target_path = WEB_DIR / "sounds" / safe_name
+        
+        # Path traversal protection (matches _cmd_delete_sound)
+        try:
+            sounds_dir = (WEB_DIR / "sounds").resolve()
+            target_path.resolve().relative_to(sounds_dir)
+        except ValueError:
+            return {"status": "error", "message": "Invalid file path."}
         
         try:
             # Ensure sounds dir exists
             target_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Decode and save
+            # Decode and validate size
             audio_data = base64.b64decode(data_b64)
+            if len(audio_data) > MAX_SOUND_SIZE:
+                return {"status": "error", "message": f"File too large (max {MAX_SOUND_SIZE // (1024*1024)}MB)."}
+            
             target_path.write_bytes(audio_data)
             
-            logging.info("User uploaded new sound: %s", safe_name)
+            logging.info("User uploaded new sound: %s (%d bytes)", safe_name, len(audio_data))
             return {"status": "ok", "message": f"Sound '{safe_name}' uploaded successfully."}
         except Exception as exc:
             logging.error("Upload error: %s", exc)
@@ -1475,114 +1752,124 @@ class ForcedFocusDaemon:
 
     def _watchdog_loop(self):
         logging.info("Watchdog thread started (interval=%.0fms).", WATCHDOG_INTERVAL * 1000)
-        dns_check_counter = 0
-        persist_counter = 0
+        self._wd_dns_counter = 0
+        self._wd_persist_counter = 0
         while True:
             time.sleep(WATCHDOG_INTERVAL)
-            cmd_to_start = None
-            
-            with self.lock:
-                if getattr(self, "schedules", []):
-                    # Check if the first schedule (sorted by start_time) is ready
-                    if datetime.now() >= self.schedules[0]["start_time"]:
-                        sch = self.schedules.pop(0)
-                        cmd_to_start = sch["cmd"]
-                        self._persist_session_lock()
-                        if self.active:
-                            # L1: Properly cleanup the active session before starting the scheduled one
-                            logging.info("Active session being replaced by scheduled session. Cleaning up.")
-                            self._cleanup_session()
+            try:
+                self._watchdog_tick()
+            except Exception as exc:
+                logging.error("Watchdog tick error (non-fatal): %s", exc, exc_info=True)
 
-            if cmd_to_start:
-                logging.info("Scheduled time reached. Automatically starting session.")
-                self._play_sound("scheduled")
-                self._start_session(cmd_to_start)
-                continue
+    def _watchdog_tick(self):
+        cmd_to_start = None
 
-            with self.lock:
-                if not self.active:
-                    continue
-
-                now_mono = get_continuous_time()
-                
-                persist_counter += 1
-                if persist_counter >= 120:  # 120 * 250ms = 30s
-                    persist_counter = 0
+        with self.lock:
+            if getattr(self, "schedules", []):
+                # Check if the first schedule (sorted by start_time) is ready
+                if datetime.now() >= self.schedules[0]["start_time"]:
+                    sch = self.schedules.pop(0)
+                    cmd_to_start = sch["cmd"]
                     self._persist_session_lock()
+                    if self.active:
+                        # L1: Properly cleanup the active session before starting the scheduled one
+                        logging.info("Active session being replaced by scheduled session. Cleaning up.")
+                        self._cleanup_session()
 
-                # C1: Handle signal-driven re-enforce (flag set without lock)
-                if self._reenforce_flag:
-                    self._reenforce_flag = False
-                    if not (self.session_type == "pomodoro" and self.pomo_phase == "break"):
-                        logging.info("Signal re-enforce: re-applying block rules.")
-                        try:
-                            self._enforce_current_mode()
-                        except Exception as exc:
-                            logging.error("Signal re-enforce failed: %s", exc)
+        if cmd_to_start:
+            logging.info("Scheduled time reached. Automatically starting session.")
+            self._play_sound("scheduled")
+            self._start_session(cmd_to_start)
+            return
 
-                # Use monotonic time for duration checks (immune to clock changes)
-                if now_mono >= self._mono_session_end:
-                    logging.info("Session timer expired.")
-                    self._cleanup_session()
-                    continue
-                if self._mono_unlock_end > 0 and now_mono >= self._mono_unlock_end:
-                    logging.info("Delayed unlock period reached. Unlocking.")
-                    self._cleanup_session()
-                    continue
+        with self.lock:
+            if not self.active:
+                return
 
-                # Pomodoro phase check
-                if self.session_type == "pomodoro" and self._mono_pomo_phase_end > 0:
-                    if now_mono >= self._mono_pomo_phase_end:
-                        self._transition_pomodoro_phase()
-                        continue
+            now_mono = get_continuous_time()
 
-                # Skip integrity checks during pomodoro break
-                if self.session_type == "pomodoro" and self.pomo_phase == "break":
-                    continue
+            self._wd_persist_counter += 1
+            if self._wd_persist_counter >= 120:  # 120 * 250ms = 30s
+                self._wd_persist_counter = 0
+                self._persist_session_lock()
 
-                # Integrity check: /etc/hosts (blacklist mode only)
-                if self.mode != "whitelist":
+            # C1: Handle signal-driven re-enforce (flag set without lock)
+            if self._reenforce_flag:
+                self._reenforce_flag = False
+                if not (self.session_type == "pomodoro" and self.pomo_phase == "break"):
+                    logging.info("Signal re-enforce: re-applying block rules.")
                     try:
-                        current = HOSTS_PATH.read_text()
-                        h = hashlib.sha256(current.encode()).hexdigest()
-                        if h != self.hosts_hash:
-                            logging.warning("HOSTS TAMPER DETECTED. Re-enforcing.")
-                            self._enforce_block()
+                        self._enforce_current_mode()
                     except Exception as exc:
-                        logging.error("Watchdog hosts error: %s", exc)
-                
-                # Integrity check: Firewall (QUIC block) every ~1s
-                if persist_counter % 4 == 0:
-                    try:
-                        res = subprocess.run(["pfctl", "-a", "forcefocus", "-s", "rules"], capture_output=True, text=True, timeout=2)
-                        # Check for '443' and 'udp' in ruleset output
-                        if "443" not in res.stdout or "udp" not in res.stdout:
-                            logging.warning("FIREWALL TAMPER DETECTED. Rules: '%s'. Re-enforcing.", res.stdout.strip())
-                            self._enforce_firewall(True)
-                    except Exception as exc:
-                        logging.error("Watchdog firewall error: %s", exc)
+                        logging.error("Signal re-enforce failed: %s", exc)
 
-                # Integrity check: session.lock existence
-                if not SESSION_LOCK.exists():
-                    logging.warning("SESSION.LOCK DELETED. Re-creating from memory.")
-                    self._persist_session_lock()
-                    # Also re-enforce block since file was tampered
-                    if self.mode == "whitelist":
-                        self._enforce_whitelist()
-                    else:
+            # Use monotonic time for duration checks (immune to clock changes)
+            if now_mono >= self._mono_session_end:
+                logging.info("Session timer expired.")
+                self._cleanup_session()
+                return
+            if self._mono_unlock_end > 0 and now_mono >= self._mono_unlock_end:
+                logging.info("Delayed unlock period reached. Unlocking.")
+                self._cleanup_session()
+                return
+
+            # Pomodoro phase check
+            if self.session_type == "pomodoro" and self._mono_pomo_phase_end > 0:
+                if now_mono >= self._mono_pomo_phase_end:
+                    self._transition_pomodoro_phase()
+                    return
+
+            # Skip integrity checks during pomodoro break
+            if self.session_type == "pomodoro" and self.pomo_phase == "break":
+                return
+
+            # Integrity check: /etc/hosts (blacklist mode only)
+            if self.mode != "whitelist":
+                try:
+                    current = HOSTS_PATH.read_text()
+                    h = hashlib.sha256(current.encode()).hexdigest()
+                    if h != self.hosts_hash:
+                        logging.warning("HOSTS TAMPER DETECTED. Re-enforcing.")
                         self._enforce_block()
+                except Exception as exc:
+                    logging.error("Watchdog hosts error: %s", exc)
 
-                # Integrity check: DNS (whitelist mode, every ~2 seconds)
+            # Integrity check: Firewall (QUIC block) every ~1s
+            if self._wd_persist_counter % 4 == 0:
+                try:
+                    res = subprocess.run(["pfctl", "-a", "forcefocus", "-s", "rules"], capture_output=True, text=True, timeout=2)
+                    # Check for '443' and 'udp' in ruleset output
+                    if "443" not in res.stdout or "udp" not in res.stdout:
+                        logging.warning("FIREWALL TAMPER DETECTED. Rules: '%s'. Re-enforcing.", res.stdout.strip())
+                        self._enforce_firewall(True)
+                except Exception as exc:
+                    logging.error("Watchdog firewall error: %s", exc)
+
+            # Integrity check: session.lock existence
+            if not SESSION_LOCK.exists():
+                logging.warning("SESSION.LOCK DELETED. Re-creating from memory.")
+                self._persist_session_lock()
+                # Also re-enforce block since file was tampered
                 if self.mode == "whitelist":
-                    if self.dns_proxy and not self.dns_proxy.is_alive() and not (self.session_type == "pomodoro" and self.pomo_phase == "break"):
-                        logging.warning("DNS Proxy thread died. Restarting.")
-                        self.dns_proxy = LocalDNSProxy(self)
-                        self.dns_proxy.start()
-                        
-                    dns_check_counter += 1
-                    if dns_check_counter >= 8:  # 8 * 250ms = 2s
-                        dns_check_counter = 0
-                        self._verify_dns_redirect()
+                    self._enforce_whitelist()
+                else:
+                    self._enforce_block()
+
+            # Integrity check: DNS (whitelist mode, every ~2 seconds)
+            if self.mode == "whitelist":
+                if self.dns_proxy and not self.dns_proxy.is_alive() and not (self.session_type == "pomodoro" and self.pomo_phase == "break"):
+                    logging.warning("DNS Proxy thread died. Restarting.")
+                    self.dns_proxy = LocalDNSProxy(self)
+                    self.dns_proxy.start()
+
+                self._wd_dns_counter += 1
+                if self._wd_dns_counter >= 8:  # 8 * 250ms = 2s
+                    self._wd_dns_counter = 0
+                    self._verify_dns_redirect()
+
+            # Integrity check: Proxy/VPN/App Watchdog (every ~5s)
+            if self._wd_persist_counter % 20 == 0:
+                self._kill_restricted_apps()
 
     # ── Passphrase ────────────────────────────────────────────────────────────
 
@@ -1633,10 +1920,18 @@ class ForcedFocusDaemon:
                 continue
             try:
                 conn.settimeout(5.0)
+                MAX_MSG_SIZE = 1 * 1024 * 1024  # 1MB — generous for any valid command
                 chunks = []
+                total_size = 0
                 while True:
                     chunk = conn.recv(8192)
                     if not chunk:
+                        break
+                    total_size += len(chunk)
+                    if total_size > MAX_MSG_SIZE:
+                        logging.warning("Socket message exceeded %d bytes. Disconnecting client.", MAX_MSG_SIZE)
+                        conn.sendall(json.dumps({"status": "error", "message": "Message too large."}).encode("utf-8"))
+                        chunks = []
                         break
                     chunks.append(chunk)
                 raw = b''.join(chunks).decode("utf-8").strip()
@@ -1675,18 +1970,24 @@ class ForcedFocusDaemon:
             return self._cmd_add_domains(cmd)
         elif action == "remove_domain":
             return self._cmd_remove_domain(cmd)
+        elif action == "get_groups":
+            return self._cmd_get_groups()
+        elif action == "add_group":
+            return self._cmd_add_group(cmd)
+        elif action == "remove_group":
+            return self._cmd_remove_group(cmd)
         else:
             return {"status": "error", "message": f"Unknown action: {action}"}
 
     def _http_server(self):
-        global WEB_DIR
+        # LOW #2: Determine web directory without mutating global state
         local_web = Path(__file__).parent / "web"
-        if local_web.exists():
-            WEB_DIR = local_web
+        web_dir = local_web if local_web.exists() else WEB_DIR
         try:
             server = EmbeddedHTTPServer((WEB_HOST, WEB_PORT), EmbeddedWebHandler)
             server.daemon_ref = self
-            logging.info("Web UI listening at http://%s:%d", WEB_HOST, WEB_PORT)
+            server.web_dir = web_dir
+            logging.info("Web UI listening at http://%s:%d (serving from %s)", WEB_HOST, WEB_PORT, web_dir)
             server.serve_forever()
         except Exception as exc:
             logging.error("HTTP server failed: %s", exc)
@@ -1694,6 +1995,7 @@ class ForcedFocusDaemon:
 class EmbeddedHTTPServer(HTTPServer):
     allow_reuse_address = True
     daemon_ref = None
+    web_dir = WEB_DIR  # Default, overridden per-instance
 
 
 class EmbeddedWebHandler(BaseHTTPRequestHandler):
@@ -1709,6 +2011,14 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
         if origin.startswith("chrome-extension://"):
             return True
         return False
+
+    def _is_api_token_valid(self) -> bool:
+        """Verify the X-API-Token header matches the daemon's per-launch token."""
+        token = self.headers.get("X-API-Token")
+        if not token:
+            return False
+        daemon = self.server.daemon_ref
+        return hasattr(daemon, 'api_token') and hmac.compare_digest(token, daemon.api_token)
 
     def _get_cors_origin(self) -> str:
         origin = self.headers.get("Origin")
@@ -1730,7 +2040,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         try:
-            filepath.resolve().relative_to(WEB_DIR.resolve())
+            filepath.resolve().relative_to(self.server.web_dir.resolve())
         except ValueError:
             self.send_error(403)
             return
@@ -1765,7 +2075,8 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        path = unquote(parsed.path)
+        path = unquote(parsed.path).rstrip("/")
+        if not path: path = "/"
 
         if path.startswith("/api/") and not self._is_origin_allowed():
             self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
@@ -1779,19 +2090,29 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
             self._send_json(self.server.daemon_ref._cmd_get_sounds())
         elif path == "/api/settings":
             self._send_json(self.server.daemon_ref._cmd_get_settings())
+        elif path == "/api/groups":
+            self._send_json(self.server.daemon_ref._cmd_get_groups())
+        elif path == "/api/token":
+            token = getattr(self.server.daemon_ref, 'api_token', '')
+            self._send_json({"token": token})
         elif path == "/" or path == "":
-            self._send_file(WEB_DIR / "index.html")
+            self._send_file(self.server.web_dir / "index.html")
         elif path == "/menubar":
-            self._send_file(WEB_DIR / "menubar.html")
+            self._send_file(self.server.web_dir / "menubar.html")
         else:
-            self._send_file(WEB_DIR / path.lstrip("/"))
+            self._send_file(self.server.web_dir / path.lstrip("/"))
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        path = unquote(parsed.path)
+        path = unquote(parsed.path).rstrip("/")
+        if not path: path = "/"
         
         if not self._is_origin_allowed():
             self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
+            return
+
+        if not self._is_api_token_valid():
+            self._send_json({"status": "error", "message": "Unauthorized: invalid or missing API token."}, 401)
             return
             
         body = self._read_body()
@@ -1805,6 +2126,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
                 "focus_minutes": body.get("focus_minutes", 25),
                 "break_minutes": body.get("break_minutes", 5),
                 "cycles": body.get("cycles", 4),
+                "groups": body.get("groups", []),
             }
             if "schedule_in" in body:
                 cmd["schedule_in_minutes"] = body["schedule_in"]
@@ -1832,19 +2154,31 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
             else:
                 cmd = {
                     "action": "add_domain",
-                    "list": parts[-1],
+                    "list": parts[2],
                     "domain": body.get("domain", ""),
                 }
                 self._send_json(self.server.daemon_ref._cmd_add_domain(cmd))
+        elif path == "/api/groups":
+            cmd = {
+                "action": "add_group",
+                "name": body.get("name", ""),
+                "domains": body.get("domains", []),
+            }
+            self._send_json(self.server.daemon_ref._cmd_add_group(cmd))
         else:
             self._send_json({"status": "error", "message": "Unknown endpoint."}, 404)
 
     def do_DELETE(self):
         parsed = urlparse(self.path)
-        path = unquote(parsed.path)
+        path = unquote(parsed.path).rstrip("/")
+        if not path: path = "/"
 
         if not self._is_origin_allowed():
             self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
+            return
+
+        if not self._is_api_token_valid():
+            self._send_json({"status": "error", "message": "Unauthorized: invalid or missing API token."}, 401)
             return
 
         parts = path.strip("/").split("/")
@@ -1855,6 +2189,12 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
                 "domain": "/".join(parts[3:]),
             }
             self._send_json(self.server.daemon_ref._cmd_remove_domain(cmd))
+        elif len(parts) == 3 and parts[0] == "api" and parts[1] == "groups":
+            cmd = {
+                "action": "remove_group",
+                "name": parts[2],
+            }
+            self._send_json(self.server.daemon_ref._cmd_remove_group(cmd))
         else:
             self._send_json({"status": "error", "message": "Unknown endpoint."}, 404)
 
@@ -1862,8 +2202,15 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", self._get_cors_origin())
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-API-Token")
         self.end_headers()
+
+    # LOW #3: Explicitly deny unsupported HTTP methods
+    def do_PUT(self):
+        self._send_json({"status": "error", "message": "Method not allowed."}, 405)
+
+    def do_PATCH(self):
+        self._send_json({"status": "error", "message": "Method not allowed."}, 405)
 
 
 def main():

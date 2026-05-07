@@ -179,6 +179,9 @@ def cmd_start(args):
     elif args.schedule_at:
         payload["schedule_at_time"] = args.schedule_at
 
+    if args.groups:
+        payload["groups"] = args.groups
+
     if out.is_human:
         with console.status(f"[info]Requesting {mode} session ({session_type})...[/info]"):
             resp = send_command(payload)
@@ -186,6 +189,56 @@ def cmd_start(args):
         resp = send_command(payload)
 
     out.print_data(resp, title="Start Session")
+
+
+def cmd_groups(args):
+    """Manage domain groups."""
+    action = args.action
+    name = args.name
+    
+    if action == "list":
+        resp = send_command({"action": "get_groups"})
+        if out.is_agent:
+            out.print_data(resp)
+            return
+        
+        groups = resp.get("groups", {})
+        if not groups:
+            console.print("[dim]No domain groups defined.[/dim]")
+            return
+        
+        table = Table(title="Domain Groups", header_style="bold magenta")
+        table.add_column("Group Name", style="success")
+        table.add_column("Domain Count", justify="right")
+        table.add_column("Domains")
+        
+        for gname, domains in groups.items():
+            table.add_row(gname, str(len(domains)), ", ".join(domains[:5]) + ("..." if len(domains) > 5 else ""))
+        
+        console.print(table)
+        
+    elif action == "add":
+        if not name:
+            out.print_error("Group name required for 'add'.", code="USAGE_ERROR")
+        if not args.domains:
+            out.print_error("At least one domain required for 'add'.", code="USAGE_ERROR")
+            
+        resp = send_command({
+            "action": "add_group",
+            "name": name,
+            "domains": args.domains
+        })
+        out.print_data(resp, title="Add Group")
+        
+    elif action == "remove":
+        if not name:
+            out.print_error("Group name required for 'remove'.", code="USAGE_ERROR")
+            
+        resp = send_command({
+            "action": "remove_group",
+            "name": name
+        })
+        out.print_data(resp, title="Remove Group")
 
 
 def cmd_stop(args):
@@ -318,14 +371,15 @@ def cmd_set_key(_args):
         if p1 != p2:
             out.print_error("Passphrases do not match.", code="MISMATCH")
         
-        # PBKDF2-HMAC-SHA256
+        # PBKDF2-HMAC-SHA256 — must match daemon's _verify_passphrase()
         salt = os.urandom(16)
-        iterations = 600000
+        iterations = 100_000  # Must match daemon (forcefocus_daemon.py L1827)
         key_hash = hashlib.pbkdf2_hmac('sha256', p1.encode(), salt, iterations)
         
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        data = {"salt": salt.hex(), "hash": key_hash.hex()}
         with open(KS_HASH_FILE, "w") as f:
-            f.write(f"{salt.hex()}:{iterations}:{key_hash.hex()}")
+            json.dump(data, f)
         
         os.chmod(KS_HASH_FILE, 0o600)
         out.print_data({"status": "ok", "message": "Passphrase set successfully."}, title="Set Key")
@@ -385,6 +439,7 @@ def build_parser():
     p_start.add_argument("--cycles", type=int, default=4, help="Pomodoro cycle count")
     p_start.add_argument("--in", dest="schedule_in", type=int, metavar="MIN", help="Schedule session in N minutes")
     p_start.add_argument("--at", dest="schedule_at", metavar="TIME", help="Schedule session at HH:MM time")
+    p_start.add_argument("--groups", "-g", nargs="+", help="Groups to include in the session")
     p_start.set_defaults(func=cmd_start)
 
     # stop
@@ -412,6 +467,15 @@ def build_parser():
     p_web.add_argument("--agent", "-A", action="store_true", help="Force agent-friendly output")
     p_web.add_argument("action", choices=["start", "stop"], default="start", nargs="?", help="Action to perform")
     p_web.set_defaults(func=cmd_web)
+
+    # groups
+    p_groups = sub.add_parser("groups", help="Manage domain groups")
+    p_groups.add_argument("--human", "-H", action="store_true", help="Force human-friendly output")
+    p_groups.add_argument("--agent", "-A", action="store_true", help="Force agent-friendly output")
+    p_groups.add_argument("action", choices=["list", "add", "remove"], help="Group action")
+    p_groups.add_argument("name", nargs="?", help="Group name")
+    p_groups.add_argument("domains", nargs="*", help="Domains for 'add'")
+    p_groups.set_defaults(func=cmd_groups)
 
     return parser
 
@@ -450,7 +514,8 @@ def print_rich_help(parser):
         "stop": "Request a delayed unlock (20-min delay)",
         "status": "Show current session dashboard",
         "set-key": "Set/change the kill-switch passphrase",
-        "web": "Manage the web interface"
+        "web": "Manage the web interface",
+        "groups": "Manage domain groups"
     }
     for cmd, desc in commands.items():
         table.add_row(cmd, desc)
