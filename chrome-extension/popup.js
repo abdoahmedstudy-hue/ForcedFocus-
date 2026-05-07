@@ -14,7 +14,7 @@ let sessionType = 'standard';
 let pomoFocusMin = 25;
 let pomoBreakMin = 5;
 let pomoCycles = 4;
-let selectedGroups = [];
+let selectedGroups = new Set();
 let availableGroups = {};
 
 let apiToken = ''; // A2: Per-launch API token for mutation auth
@@ -96,9 +96,8 @@ async function checkServer() {
 function fmt(secs) {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
-    if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    const s = Math.floor(secs % 60);
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
 function updateRing(remaining) {
@@ -171,21 +170,21 @@ function renderGroups() {
     
     names.forEach(name => {
         const chip = document.createElement('div');
-        chip.className = 'group-chip' + (selectedGroups.includes(name) ? ' active' : '');
+        chip.className = 'group-chip' + (selectedGroups.has(name) ? ' active' : '');
         chip.textContent = name;
-        chip.addEventListener('click', () => {
-            if (selectedGroups.includes(name)) {
-                selectedGroups = selectedGroups.filter(g => g !== name);
+        chip.onclick = () => {
+            if (selectedGroups.has(name)) {
+                selectedGroups.delete(name);
             } else {
-                selectedGroups.push(name);
+                selectedGroups.add(name);
             }
             renderGroups();
-        });
+        };
         grid.appendChild(chip);
     });
 
     if (countLabel) {
-        countLabel.textContent = `${selectedGroups.length} selected`;
+        countLabel.textContent = `${selectedGroups.size} selected`;
     }
 }
 
@@ -449,7 +448,7 @@ function initEvents() {
                     focus_minutes: pomoFocusMin,
                     break_minutes: pomoBreakMin,
                     cycles: pomoCycles,
-                    groups: selectedGroups
+                    groups: Array.from(selectedGroups)
                 };
             } else {
                 totalSecs = duration * 60;
@@ -457,7 +456,7 @@ function initEvents() {
                     duration, 
                     mode, 
                     session_type: 'standard',
-                    groups: selectedGroups 
+                    groups: Array.from(selectedGroups) 
                 };
             }
 

@@ -9,6 +9,7 @@ let selectedDuration = 120;
 let countdownInterval = null;
 let pollInterval = null;
 let totalSessionSeconds = 0;
+let currentRemaining = 0;
 
 let sessionType = 'standard';
 let pomoFocusMin = 25;
