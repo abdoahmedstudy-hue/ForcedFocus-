@@ -1499,7 +1499,6 @@ class ForcedFocusDaemon:
         
         Can be disabled via settings: {"aggressive_cache_clear": false}
         """
-        # LOW #4: Allow users to opt out of aggressive cache clearing
         if not self.settings.get("aggressive_cache_clear", True):
             logging.debug("Aggressive cache clearing disabled by settings.")
             return
