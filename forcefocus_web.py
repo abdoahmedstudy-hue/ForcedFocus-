@@ -164,6 +164,10 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
                 "break_minutes": body.get("break_minutes", 5),
                 "cycles": body.get("cycles", 4),
             }
+            if "schedule_in" in body:
+                cmd["schedule_in_minutes"] = body["schedule_in"]
+            if "schedule_at" in body:
+                cmd["schedule_at_time"] = body["schedule_at"]
             self._send_json(send_to_daemon(cmd))
 
         elif path == "/api/stop":

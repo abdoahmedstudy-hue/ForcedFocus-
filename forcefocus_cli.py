@@ -83,7 +83,6 @@ def cmd_start(args):
         print("✗ Duration must be a positive number of minutes.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"⏳ Starting {mode} session ({session_type}) for {duration} minutes...")
     payload = {
         "action": "start", 
         "duration_minutes": duration, 
@@ -93,6 +92,16 @@ def cmd_start(args):
         "break_minutes": args.break_time,
         "cycles": args.cycles
     }
+    
+    if args.schedule_in:
+        payload["schedule_in_minutes"] = args.schedule_in
+        print(f"⏳ Scheduling {mode} session ({session_type}) for {duration} minutes, starting in {args.schedule_in}m...")
+    elif args.schedule_at:
+        payload["schedule_at_time"] = args.schedule_at
+        print(f"⏳ Scheduling {mode} session ({session_type}) for {duration} minutes, starting at {args.schedule_at}...")
+    else:
+        print(f"⏳ Starting {mode} session ({session_type}) for {duration} minutes...")
+        
     resp = send_command(payload)
 
     status = resp.get("status")
@@ -137,44 +146,63 @@ def cmd_status(_args):
     """Print current daemon/session state."""
     resp = send_command({"action": "status"})
 
-    status = resp.get("status")
     active = resp.get("active", False)
-
-    if not active:
+    schedules = resp.get("schedules", [])
+    
+    if not active and not schedules:
         print("○ ForcedFocus is idle — no active blocking session.")
         return
 
-    mode      = resp.get("mode", "?")
-    expires   = resp.get("expires_at", "?")
-    rem_secs  = resp.get("remaining_seconds", 0)
-    rem_min   = rem_secs // 60
-    rem_sec   = rem_secs % 60
-    count     = resp.get("domains_count", 0)
-    pending   = resp.get("pending_unlock")
-    session_type = resp.get("session_type", "standard")
-
-    print("━" * 50)
-    print(f"  ● ForcedFocus — ACTIVE ({mode.upper()})")
-    print("━" * 50)
-    print(f"  Mode            : {mode}")
-    print(f"  Type            : {session_type.capitalize()}")
-    if session_type == "pomodoro":
-        phase = resp.get("pomo_phase", "?")
-        cycle = resp.get("pomo_current_cycle", "?")
-        total_cycles = resp.get("pomo_total_cycles", "?")
-        phase_rem = resp.get("pomo_phase_remaining", 0)
-        p_min, p_sec = phase_rem // 60, phase_rem % 60
-        print(f"  Phase           : {phase.upper()} (Cycle {cycle}/{total_cycles})")
-        print(f"  Phase Remaining : {p_min}m {p_sec}s")
+    if active:
+        mode      = resp.get("mode", "?")
+        expires   = resp.get("expires_at", "?")
+        rem_secs  = resp.get("remaining_seconds", 0)
+        rem_min   = rem_secs // 60
+        rem_sec   = rem_secs % 60
+        count     = resp.get("domains_count", 0)
+        pending   = resp.get("pending_unlock")
+        session_type = resp.get("session_type", "standard")
         
-    print(f"  Domains         : {count}")
-    print(f"  Session expires : {expires}")
-    print(f"  Total remaining : {rem_min}m {rem_sec}s")
-    if pending:
-        print(f"  ⏱ Unlock pending : {pending}")
-    else:
-        print(f"  Unlock pending  : No")
-    print("━" * 50)
+        print("━" * 50)
+        print(f"  ● ForcedFocus — ACTIVE ({mode.upper()})")
+        print("━" * 50)
+        print(f"  Type            : {session_type.capitalize()}")
+        if session_type == "pomodoro":
+            phase = resp.get("pomo_phase", "?")
+            cycle = resp.get("pomo_current_cycle", "?")
+            total_cycles = resp.get("pomo_total_cycles", "?")
+            phase_rem = resp.get("pomo_phase_remaining", 0)
+            p_min, p_sec = phase_rem // 60, phase_rem % 60
+            print(f"  Phase           : {phase.upper()} (Cycle {cycle}/{total_cycles})")
+            print(f"  Phase Remaining : {p_min}m {p_sec}s")
+        print(f"  Domains         : {count}")
+        print(f"  Session expires : {expires}")
+        print(f"  Total remaining : {rem_min}m {rem_sec}s")
+        if pending:
+            p_sec = resp.get("pending_unlock_seconds", 0)
+            p_min = p_sec // 60
+            p_s = p_sec % 60
+            print(f"  ⚠ UNLOCK PENDING")
+            print(f"  Releases at     : {pending}")
+            print(f"  Wait Remaining  : {p_min}m {p_s}s")
+        print("━" * 50)
+
+    if schedules:
+        print("\n  ⏳ UPCOMING SCHEDULES")
+        print("━" * 50)
+        for i, sch in enumerate(schedules, 1):
+            s_mode = sch.get("mode", "?").upper()
+            s_type = sch.get("session_type", "standard").capitalize()
+            s_time = sch.get("starts_at", "?")
+            s_dur  = sch.get("duration_minutes", "?")
+            
+            rem_secs = sch.get("starting_in_seconds", 0)
+            rem_min = rem_secs // 60
+            rem_sec = rem_secs % 60
+            
+            print(f"  {i}. {s_mode} ({s_type}) - {s_dur}m")
+            print(f"     Starts at    : {s_time} (in {rem_min}m {rem_sec}s)")
+        print("━" * 50)
 
 
 def cmd_set_key(_args):
@@ -297,6 +325,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=4,
         help="Pomodoro cycle count (default: 4)",
+    )
+    p_start.add_argument(
+        "--schedule-in",
+        type=int,
+        metavar="MINUTES",
+        help="Schedule session to start after N minutes",
+    )
+    p_start.add_argument(
+        "--schedule-at",
+        type=str,
+        metavar="'YYYY-MM-DD HH:MM AM/PM'",
+        help="Schedule session at specific date/time (e.g. '02:30 PM' or '2026-05-01 02:30 PM')",
     )
     p_start.set_defaults(func=cmd_start)
 
