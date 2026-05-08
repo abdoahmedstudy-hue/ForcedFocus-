@@ -94,6 +94,32 @@ class TestForcedFocusDaemon(unittest.TestCase):
         mock_enforce.assert_called_once()
         mock_write.assert_called_once()
 
+    def test_start_session_invalid_duration_type(self):
+        cmd = {"action": "start", "duration_minutes": "invalid", "mode": "blacklist"}
+        result = self.daemon._start_session(cmd)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["message"], "Invalid duration.")
+
+    def test_start_session_invalid_duration_range(self):
+        # Too low
+        cmd = {"action": "start", "duration_minutes": 0, "mode": "blacklist"}
+        result = self.daemon._start_session(cmd)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["message"], "Duration must be 1–1440 minutes.")
+
+        # Too high
+        cmd = {"action": "start", "duration_minutes": 1441, "mode": "blacklist"}
+        result = self.daemon._start_session(cmd)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["message"], "Duration must be 1–1440 minutes.")
+
+    def test_start_session_invalid_mode(self):
+        cmd = {"action": "start", "duration_minutes": 60, "mode": "greylist"}
+        result = self.daemon._start_session(cmd)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["message"], "Invalid mode.")
+
+
     @patch('forcefocus_daemon.subprocess.run')
     @patch('forcefocus_daemon.ForcedFocusDaemon._flush_dns')
     @patch('forcefocus_daemon.ForcedFocusDaemon._enforce_browser_policies')
