@@ -157,5 +157,59 @@ class TestForcedFocusDaemon(unittest.TestCase):
         mock_logging_error.assert_called_once()
         self.assertIn("_enforce_doh_block failed: %s", mock_logging_error.call_args[0][0])
 
+
+    @patch('forcefocus_daemon.logging.warning')
+    @patch('forcefocus_daemon.subprocess.run')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._strip_block', return_value="stripped")
+    @patch('forcefocus_daemon.ForcedFocusDaemon._build_blacklist_block', return_value="block")
+    @patch('forcefocus_daemon.Path.read_text', return_value="original")
+    @patch('forcefocus_daemon.Path.write_text')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._enforce_firewall')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._enforce_browser_policies')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._clear_browser_caches')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._flush_dns')
+    def test_enforce_block_chflags_error(self, mock_flush, mock_cache, mock_policies, mock_fw, mock_write, mock_read, mock_build, mock_strip, mock_run, mock_logging_warn):
+        # Setup mock for subprocess.run to simulate chflags failure
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = b"Permission denied"
+        mock_run.return_value = mock_result
+
+        self.daemon._enforce_block()
+
+        # subprocess.run is called twice for chflags nouchg and uchg
+        self.assertEqual(mock_run.call_count, 2)
+
+        # Verify logging.warning was called twice with the appropriate messages
+        self.assertEqual(mock_logging_warn.call_count, 2)
+
+        # First warning for nouchg
+        mock_logging_warn.assert_any_call("chflags nouchg failed with code %d: %s", 1, "Permission denied")
+        # Second warning for uchg
+        mock_logging_warn.assert_any_call("chflags uchg failed with code %d: %s", 1, "Permission denied")
+
+        # Verify other side effects still run even if chflags fails
+        mock_write.assert_called_once()
+        mock_fw.assert_called_once_with(True)
+        mock_policies.assert_called_once_with(True)
+        mock_cache.assert_called_once()
+        mock_flush.assert_called_once()
+
+    @patch('forcefocus_daemon.logging.error')
+    @patch('forcefocus_daemon.subprocess.run')
+    @patch('forcefocus_daemon.Path.read_text', side_effect=Exception("Disk read error"))
+    def test_enforce_block_exception(self, mock_read, mock_run, mock_logging_error):
+        # subprocess.run succeeds
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        self.daemon._enforce_block()
+
+        # Verify that the exception is caught and logged
+        mock_logging_error.assert_called_once()
+        self.assertIn("enforce_block failed", str(mock_logging_error.call_args))
+
 if __name__ == '__main__':
     unittest.main()
+
