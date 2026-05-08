@@ -94,6 +94,25 @@ class TestForcedFocusDaemon(unittest.TestCase):
         mock_enforce.assert_called_once()
         mock_write.assert_called_once()
 
+
+    @patch('forcefocus_daemon.subprocess.run', side_effect=Exception("Test cleanup exception"))
+    @patch('forcefocus_daemon.logging.error')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._play_sound')
+    @patch('forcefocus_daemon.SESSION_LOCK')
+    def test_cleanup_session_error_handling(self, mock_lock, mock_sound, mock_log_error, mock_run):
+        self.daemon.active = True
+        self.daemon.mode = "blacklist"
+        self.daemon.session_expiry = datetime.datetime.now()
+
+        self.daemon._cleanup_session()
+
+        self.assertFalse(self.daemon.active)
+        mock_log_error.assert_called_once()
+        self.assertIn("cleanup_session error", mock_log_error.call_args[0][0])
+        mock_lock.unlink.assert_called_once_with(missing_ok=True)
+        self.assertEqual(self.daemon.session_expiry, None)
+        self.assertEqual(self.daemon.mode, "blacklist")
+
     @patch('forcefocus_daemon.subprocess.run')
     @patch('forcefocus_daemon.ForcedFocusDaemon._flush_dns')
     @patch('forcefocus_daemon.ForcedFocusDaemon._enforce_browser_policies')
