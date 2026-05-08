@@ -36,11 +36,24 @@ let availableGroups = {};
 let previewAudio = null;
 let apiToken = '';
 
+const activeRequests = new Map();
+
 async function api(method, endpoint, body = null) {
     const headers = { 'Content-Type': 'application/json' };
     if (method !== 'GET' && apiToken) headers['X-API-Token'] = apiToken;
     const opts = { method, headers };
     if (body) opts.body = JSON.stringify(body);
+
+    // Flow Reliability: Prevent GET request race conditions and overlap
+    let requestKey = method + ':' + (endpoint || '');
+    if (method === 'GET') {
+        if (activeRequests.has(requestKey)) {
+            activeRequests.get(requestKey).abort();
+        }
+        const controller = new AbortController();
+        opts.signal = controller.signal;
+        activeRequests.set(requestKey, controller);
+    }
     try {
         const res = await fetch(endpoint, opts);
         // S4: Auto-refresh token on 401 (daemon restarted)
@@ -50,8 +63,11 @@ async function api(method, endpoint, body = null) {
             const retry = await fetch(endpoint, { method, headers, body: opts.body });
             return await retry.json();
         }
-        return await res.json();
+        const data = await res.json();
+        if (method === 'GET') activeRequests.delete(requestKey);
+        return data;
     } catch (err) {
+        if (err.name === 'AbortError') return new Promise(() => {});
         console.error('API Error:', err);
         return { status: 'error', message: 'Communication failed.' };
     }
@@ -149,12 +165,17 @@ function renderSettings() {
 }
 
 async function saveSettings() {
-    const newSettings = {};
-    els.settingsGrid.querySelectorAll('select').forEach(sel => {
-        newSettings[sel.dataset.key] = sel.value;
-    });
+    const btn = document.querySelector('.settings-footer .primary-btn');
+    if (btn) btn.disabled = true;
+    const originalText = btn ? btn.textContent : '';
+    if (btn) btn.textContent = 'Saving...';
 
     try {
+        const newSettings = {};
+        els.settingsGrid.querySelectorAll('select').forEach(sel => {
+            newSettings[sel.dataset.key] = sel.value;
+        });
+
         const res = await api('POST', '/api/settings', { settings: newSettings });
         if (res.status === 'ok') {
             showToast('Settings saved.');
@@ -163,6 +184,11 @@ async function saveSettings() {
         }
     } catch (e) {
         showToast('Failed to save settings.');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
     }
 }
 

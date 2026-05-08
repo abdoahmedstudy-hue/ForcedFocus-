@@ -66,11 +66,24 @@ const els = {
     groupCount: $('#groupCount')
 };
 
+const activeRequests = new Map();
+
 async function api(method, path, body = null) {
     const headers = { 'Content-Type': 'application/json' };
     if (method !== 'GET' && apiToken) headers['X-API-Token'] = apiToken;
     const opts = { method, headers };
     if (body) opts.body = JSON.stringify(body);
+
+    // Flow Reliability: Prevent GET request race conditions and overlap
+    let requestKey = method + ':' + (path || '');
+    if (method === 'GET') {
+        if (activeRequests.has(requestKey)) {
+            activeRequests.get(requestKey).abort();
+        }
+        const controller = new AbortController();
+        opts.signal = controller.signal;
+        activeRequests.set(requestKey, controller);
+    }
     try {
         const res = await fetch(API + path, opts);
         // S4: Auto-refresh token on 401 (daemon restarted)
@@ -80,8 +93,11 @@ async function api(method, path, body = null) {
             const retry = await fetch(API + path, { method, headers, body: opts.body });
             return await retry.json();
         }
-        return await res.json();
-    } catch {
+        const data = await res.json();
+        if (method === 'GET') activeRequests.delete(requestKey);
+        return data;
+    } catch (err) {
+        if (err.name === 'AbortError') return new Promise(() => {});
         return { status: 'error', message: 'Offline' };
     }
 }
@@ -382,13 +398,23 @@ function initEvents() {
                 errEl.classList.remove('hidden');
                 return;
             }
-            const res = await api('POST', '/api/stop', { key });
-            if (res.status === 'pending' || res.status === 'ok') {
-                document.getElementById('unlockDialog').classList.add('hidden');
-                refresh();
-            } else {
-                errEl.textContent = res.message || 'Invalid passphrase.';
-                errEl.classList.remove('hidden');
+
+            btnUnlockConfirm.disabled = true;
+            const originalText = btnUnlockConfirm.textContent;
+            btnUnlockConfirm.textContent = 'Unlocking...';
+
+            try {
+                const res = await api('POST', '/api/stop', { key });
+                if (res.status === 'pending' || res.status === 'ok') {
+                    document.getElementById('unlockDialog').classList.add('hidden');
+                    refresh();
+                } else {
+                    errEl.textContent = res.message || 'Invalid passphrase.';
+                    errEl.classList.remove('hidden');
+                }
+            } finally {
+                btnUnlockConfirm.disabled = false;
+                btnUnlockConfirm.textContent = originalText;
             }
         });
     }

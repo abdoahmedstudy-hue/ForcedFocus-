@@ -89,7 +89,7 @@ class TestForcedFocusHandler(unittest.TestCase):
         handler.headers = {"Origin": "http://127.0.0.1:7070"}
         self.assertTrue(handler._is_origin_allowed())
 
-        handler.headers = {"Origin": "chrome-extension://abcdefghijklmnop"}
+        handler.headers = {"Origin": "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc"}
         self.assertTrue(handler._is_origin_allowed())
 
         # Disallowed origins
@@ -114,8 +114,8 @@ class TestForcedFocusHandler(unittest.TestCase):
         handler.headers = {"Origin": "http://localhost:7070"}
         self.assertEqual(handler._get_cors_origin(), "http://localhost:7070")
 
-        handler.headers = {"Origin": "chrome-extension://abcdef"}
-        self.assertEqual(handler._get_cors_origin(), "chrome-extension://abcdef")
+        handler.headers = {"Origin": "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc"}
+        self.assertEqual(handler._get_cors_origin(), "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc")
 
     @patch('forcefocus_web.send_to_daemon')
     @patch('forcefocus_web.ForcedFocusHandler._send_json')
