@@ -1701,22 +1701,24 @@ class ForcedFocusDaemon:
 
     def _kill_vpns(self):
         """Terminate known VPN processes that could bypass host-file blocking."""
-        for proc in VPN_PROCESSES:
-            try:
-                # Targeted killall
-                subprocess.run(["killall", "-9", proc], capture_output=True, timeout=2)
-            except Exception:
-                pass
+        if not VPN_PROCESSES:
+            return
+        try:
+            # Targeted killall
+            subprocess.run(["killall", "-9"] + VPN_PROCESSES, capture_output=True, timeout=2)
+        except Exception:
+            pass
 
     def _kill_restricted_apps(self):
         """Terminate restricted processes (VPNs, bypass browsers, tools) during active sessions."""
-        for proc in RESTRICTED_PROCESSES:
-            try:
-                subprocess.run(["killall", "-9", proc], capture_output=True, timeout=2)
-            except subprocess.TimeoutExpired:
-                pass
-            except OSError:
-                pass
+        if not RESTRICTED_PROCESSES:
+            return
+        try:
+            subprocess.run(["killall", "-9"] + RESTRICTED_PROCESSES, capture_output=True, timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        except OSError:
+            pass
 
     # ── Watchdog ──────────────────────────────────────────────────────────────
 
