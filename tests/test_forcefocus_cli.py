@@ -89,6 +89,109 @@ class TestForceFocusCLIParser(unittest.TestCase):
 
 
 
+import socket
+import json
+import os
+
+class TestSendCommand(unittest.TestCase):
+    @patch('forcefocus_cli.os.path.exists')
+    @patch('forcefocus_cli.out.print_error')
+    def test_daemon_not_found(self, mock_print_error, mock_exists):
+        mock_exists.return_value = False
+        mock_print_error.side_effect = SystemExit(1)
+
+        with self.assertRaises(SystemExit):
+            forcefocus_cli.send_command({"cmd": "status"})
+
+        mock_print_error.assert_called_once()
+        args, kwargs = mock_print_error.call_args
+        self.assertEqual(kwargs.get("code"), "DAEMON_NOT_FOUND")
+
+    @patch('forcefocus_cli.os.path.exists')
+    @patch('forcefocus_cli.socket.socket')
+    @patch('forcefocus_cli.out.print_error')
+    def test_connection_refused(self, mock_print_error, mock_socket, mock_exists):
+        mock_exists.return_value = True
+        mock_sock_inst = MagicMock()
+        mock_socket.return_value = mock_sock_inst
+        mock_sock_inst.connect.side_effect = ConnectionRefusedError()
+        mock_print_error.side_effect = SystemExit(1)
+
+        with self.assertRaises(SystemExit):
+            forcefocus_cli.send_command({"cmd": "status"})
+
+        mock_print_error.assert_called_once()
+        args, kwargs = mock_print_error.call_args
+        self.assertEqual(kwargs.get("code"), "CONNECTION_REFUSED")
+
+    @patch('forcefocus_cli.os.path.exists')
+    @patch('forcefocus_cli.socket.socket')
+    @patch('forcefocus_cli.out.print_error')
+    def test_timeout(self, mock_print_error, mock_socket, mock_exists):
+        mock_exists.return_value = True
+        mock_sock_inst = MagicMock()
+        mock_socket.return_value = mock_sock_inst
+        mock_sock_inst.connect.side_effect = socket.timeout()
+        mock_print_error.side_effect = SystemExit(1)
+
+        with self.assertRaises(SystemExit):
+            forcefocus_cli.send_command({"cmd": "status"})
+
+        mock_print_error.assert_called_once()
+        args, kwargs = mock_print_error.call_args
+        self.assertEqual(kwargs.get("code"), "TIMEOUT")
+
+    @patch('forcefocus_cli.os.path.exists')
+    @patch('forcefocus_cli.socket.socket')
+    @patch('forcefocus_cli.out.print_error')
+    def test_socket_error(self, mock_print_error, mock_socket, mock_exists):
+        mock_exists.return_value = True
+        mock_sock_inst = MagicMock()
+        mock_socket.return_value = mock_sock_inst
+        mock_sock_inst.connect.side_effect = Exception("Some error")
+        mock_print_error.side_effect = SystemExit(1)
+
+        with self.assertRaises(SystemExit):
+            forcefocus_cli.send_command({"cmd": "status"})
+
+        mock_print_error.assert_called_once()
+        args, kwargs = mock_print_error.call_args
+        self.assertEqual(kwargs.get("code"), "SOCKET_ERROR")
+
+    @patch('forcefocus_cli.os.path.exists')
+    @patch('forcefocus_cli.socket.socket')
+    @patch('forcefocus_cli.out.print_error')
+    def test_empty_response(self, mock_print_error, mock_socket, mock_exists):
+        mock_exists.return_value = True
+        mock_sock_inst = MagicMock()
+        mock_socket.return_value = mock_sock_inst
+
+        mock_sock_inst.recv.side_effect = [b""]
+        mock_print_error.side_effect = SystemExit(1)
+
+        with self.assertRaises(SystemExit):
+            forcefocus_cli.send_command({"cmd": "status"})
+
+        mock_print_error.assert_called_once()
+        args, kwargs = mock_print_error.call_args
+        self.assertEqual(kwargs.get("code"), "EMPTY_RESPONSE")
+
+    @patch('forcefocus_cli.os.path.exists')
+    @patch('forcefocus_cli.socket.socket')
+    def test_success(self, mock_socket, mock_exists):
+        mock_exists.return_value = True
+        mock_sock_inst = MagicMock()
+        mock_socket.return_value = mock_sock_inst
+
+        response_data = {"status": "ok", "message": "success"}
+        mock_sock_inst.recv.side_effect = [json.dumps(response_data).encode("utf-8"), b""]
+
+        result = forcefocus_cli.send_command({"cmd": "status"})
+
+        self.assertEqual(result, response_data)
+        mock_sock_inst.connect.assert_called_once_with(forcefocus_cli.SOCK_PATH)
+        mock_sock_inst.sendall.assert_called_once_with(json.dumps({"cmd": "status"}).encode("utf-8"))
+
 class TestForceFocusCLICmdWeb(unittest.TestCase):
     def setUp(self):
         self.args = MagicMock()
@@ -181,6 +284,7 @@ class TestForceFocusCLICmdWeb(unittest.TestCase):
         mock_out.print_data.assert_called_once_with({"status": "ok", "message": "Stopping web interface..."}, title="Web UI")
         mock_run.assert_not_called()
         mock_out.print_error.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()
