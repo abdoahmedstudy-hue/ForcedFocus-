@@ -384,6 +384,10 @@ class ForcedFocusDaemon:
         self.dns_proxy = None
         self.original_dns: dict[str, str] = {}
         self.whitelist_resolved: dict[str, list[str]] = {}
+        self._cached_lists: dict | None = None
+        self._cached_lists_mtime: float = 0.0
+        self._cached_groups: dict | None = None
+        self._cached_groups_mtime: float = 0.0
         self.whitelist_count: int = 0
         self.whitelist_expanded_count: int = 0
         self.total_duration_seconds: int = 0
@@ -478,7 +482,17 @@ class ForcedFocusDaemon:
 
     def _load_lists(self) -> dict:
         try:
-            return json.loads(LISTS_FILE.read_text())
+            mtime = LISTS_FILE.stat().st_mtime
+        except FileNotFoundError:
+            return {"blacklist": [], "whitelist": []}
+
+        if self._cached_lists is not None and mtime == self._cached_lists_mtime:
+            return {k: v.copy() if isinstance(v, list) else v for k, v in self._cached_lists.items()}
+
+        try:
+            self._cached_lists = json.loads(LISTS_FILE.read_text())
+            self._cached_lists_mtime = mtime
+            return {k: v.copy() if isinstance(v, list) else v for k, v in self._cached_lists.items()}
         except Exception:
             return {"blacklist": [], "whitelist": []}
 
@@ -487,7 +501,17 @@ class ForcedFocusDaemon:
 
     def _load_groups(self) -> dict:
         try:
-            return json.loads(GROUPS_FILE.read_text())
+            mtime = GROUPS_FILE.stat().st_mtime
+        except FileNotFoundError:
+            return {}
+
+        if self._cached_groups is not None and mtime == self._cached_groups_mtime:
+            return {k: v.copy() if isinstance(v, list) else v for k, v in self._cached_groups.items()}
+
+        try:
+            self._cached_groups = json.loads(GROUPS_FILE.read_text())
+            self._cached_groups_mtime = mtime
+            return {k: v.copy() if isinstance(v, list) else v for k, v in self._cached_groups.items()}
         except Exception:
             return {}
 
@@ -1499,7 +1523,6 @@ class ForcedFocusDaemon:
         
         Can be disabled via settings: {"aggressive_cache_clear": false}
         """
-        # LOW #4: Allow users to opt out of aggressive cache clearing
         if not self.settings.get("aggressive_cache_clear", True):
             logging.debug("Aggressive cache clearing disabled by settings.")
             return
@@ -1678,22 +1701,24 @@ class ForcedFocusDaemon:
 
     def _kill_vpns(self):
         """Terminate known VPN processes that could bypass host-file blocking."""
-        if VPN_PROCESSES:
-            try:
-                # Targeted killall for all processes at once to reduce subprocess overhead
-                subprocess.run(["killall", "-9"] + VPN_PROCESSES, capture_output=True, timeout=2)
-            except Exception:
-                pass
+        if not VPN_PROCESSES:
+            return
+        try:
+            # Targeted killall for all processes at once to reduce subprocess overhead
+            subprocess.run(["killall", "-9"] + VPN_PROCESSES, capture_output=True, timeout=2)
+        except Exception:
+            pass
 
     def _kill_restricted_apps(self):
         """Terminate restricted processes (VPNs, bypass browsers, tools) during active sessions."""
-        if RESTRICTED_PROCESSES:
-            try:
-                subprocess.run(["killall", "-9"] + RESTRICTED_PROCESSES, capture_output=True, timeout=2)
-            except subprocess.TimeoutExpired:
-                pass
-            except OSError:
-                pass
+        if not RESTRICTED_PROCESSES:
+            return
+        try:
+            subprocess.run(["killall", "-9"] + RESTRICTED_PROCESSES, capture_output=True, timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        except OSError:
+            pass
 
     # ── Watchdog ──────────────────────────────────────────────────────────────
 
@@ -2151,7 +2176,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
             return True
         if origin in ("http://localhost:7070", "http://127.0.0.1:7070"):
             return True
-        if origin.startswith("chrome-extension://"):
+        if origin == "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc":
             return True
         return False
 
@@ -2165,7 +2190,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
 
     def _get_cors_origin(self) -> str:
         origin = self.headers.get("Origin")
-        if origin and (origin in ("http://localhost:7070", "http://127.0.0.1:7070") or origin.startswith("chrome-extension://")):
+        if origin and (origin in ("http://localhost:7070", "http://127.0.0.1:7070") or origin == "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc"):
             return origin
         return "http://127.0.0.1:7070"
 
