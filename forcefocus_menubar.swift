@@ -28,6 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, WKScriptM
     var isCurrentlyActive = false
     var currentPollInterval = 5.0
     var lastStatus: [String: Any]? = nil
+    var isPopoverShown = false
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Create status item
@@ -77,9 +78,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, WKScriptM
         // Load the menubar page
         loadMenuBarPage()
     }
-    
     func loadMenuBarPage() {
-        guard let url = URL(string: "http://127.0.0.1:7070/menubar") else { return }
+        let tokenFile = URL(fileURLWithPath: "/etc/forcefocus/api_token")
+        let token = (try? String(contentsOf: tokenFile).trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        guard let url = URL(string: "http://127.0.0.1:7070/menubar?token=\(token)") else { return }
         webView?.load(URLRequest(url: url))
     }
     
@@ -91,11 +93,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, WKScriptM
     }
     
     func popoverWillShow(_ notification: Notification) {
+        isPopoverShown = true
         pollStatus()
         webView?.evaluateJavaScript("window.onPopoverShow && window.onPopoverShow()")
     }
     
     func popoverDidClose(_ notification: Notification) {
+        isPopoverShown = false
+        if let status = lastStatus {
+            adjustPollingRate(status)
+        }
         webView?.evaluateJavaScript("window.onPopoverHide && window.onPopoverHide()")
     }
     
@@ -126,9 +133,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, WKScriptM
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
     }
-    
     @objc func openDashboard() {
-        if let url = URL(string: "http://127.0.0.1:7070") {
+        let tokenFile = URL(fileURLWithPath: "/etc/forcefocus/api_token")
+        let token = (try? String(contentsOf: tokenFile).trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        if let url = URL(string: "http://127.0.0.1:7070/?token=\(token)") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -236,14 +244,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, WKScriptM
             statusItem.button?.title = "⚡ FF"
         }
     }
-    
     func adjustPollingRate(_ json: [String: Any]) {
         let isActive = json["active"] as? Bool ?? false
-        let newInterval: TimeInterval = isActive ? 1.0 : 5.0
         
-        if newInterval != currentPollInterval {
-            currentPollInterval = newInterval
-            scheduleTimer(interval: currentPollInterval)
+        if !isActive && !isPopoverShown {
+            timer?.invalidate()
+            timer = nil
+            currentPollInterval = -1
+        } else {
+            let newInterval: TimeInterval = isActive ? 1.0 : 5.0
+            if timer == nil || newInterval != currentPollInterval {
+                currentPollInterval = newInterval
+                scheduleTimer(interval: currentPollInterval)
+            }
         }
     }
     
