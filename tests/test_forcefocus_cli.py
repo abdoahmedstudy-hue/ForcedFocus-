@@ -88,6 +88,199 @@ class TestForceFocusCLIParser(unittest.TestCase):
         self.assertEqual(args.func, forcefocus_cli.cmd_groups)
 
 
+class TestForceFocusCLISetKey(unittest.TestCase):
+    @patch('forcefocus_cli.os.geteuid')
+    @patch('forcefocus_cli.sys.exit')
+    @patch('forcefocus_cli.out.print_error')
+    def test_set_key_non_root(self, mock_print_error, mock_exit, mock_geteuid):
+        """Test set-key command when not run as root."""
+        mock_geteuid.return_value = 1000 # non-root user
+        mock_print_error.side_effect = SystemExit(1)
+        with self.assertRaises(SystemExit):
+            forcefocus_cli.cmd_set_key(None)
+
+        # Verify it errors out correctly
+        mock_print_error.assert_called_with("Must run as root to set the kill-switch passphrase.", code="PERM_DENIED", suggestion="Use: sudo forcefocus set-key")
+
+    @patch('forcefocus_cli.os.geteuid')
+    @patch('forcefocus_cli.getpass.getpass')
+    @patch('forcefocus_cli.out.print_error')
+    def test_set_key_empty_passphrase(self, mock_print_error, mock_getpass, mock_geteuid):
+        """Test set-key command when an empty passphrase is provided."""
+        mock_geteuid.return_value = 0 # root user
+
+        # Empty string on first prompt
+        mock_getpass.side_effect = ["", ""]
+        mock_print_error.side_effect = SystemExit(1)
+        with self.assertRaises(SystemExit):
+            forcefocus_cli.cmd_set_key(None)
+
+        mock_print_error.assert_called_with("Passphrase cannot be empty.", code="INVALID_INPUT")
+
+    @patch('forcefocus_cli.os.geteuid')
+    @patch('forcefocus_cli.getpass.getpass')
+    @patch('forcefocus_cli.out.print_error')
+    def test_set_key_mismatched_passphrases(self, mock_print_error, mock_getpass, mock_geteuid):
+        """Test set-key command when passphrases do not match."""
+        mock_geteuid.return_value = 0 # root user
+
+        # Different strings
+        mock_getpass.side_effect = ["password123", "different123"]
+        mock_print_error.side_effect = SystemExit(1)
+        with self.assertRaises(SystemExit):
+            forcefocus_cli.cmd_set_key(None)
+
+        mock_print_error.assert_called_with("Passphrases do not match.", code="MISMATCH")
+
+    @patch('forcefocus_cli.os.geteuid')
+    @patch('forcefocus_cli.getpass.getpass')
+    @patch('forcefocus_cli.os.urandom')
+    @patch('forcefocus_cli.json.dump')
+    @patch('forcefocus_cli.os.chmod')
+    @patch('builtins.open', new_callable=unittest.mock.mock_open)
+    @patch('forcefocus_cli.out.print_data')
+    @patch('pathlib.Path.mkdir')
+    def test_set_key_success(self, mock_mkdir, mock_print_data, mock_open, mock_chmod, mock_json_dump, mock_urandom, mock_getpass, mock_geteuid):
+        """Test successful set-key command execution."""
+        mock_geteuid.return_value = 0 # root user
+        mock_getpass.side_effect = ["mypassword", "mypassword"]
+        mock_urandom.return_value = b'1234567890abcdef'
+
+        forcefocus_cli.cmd_set_key(None)
+
+        mock_mkdir.assert_called_with(parents=True, exist_ok=True)
+        mock_open.assert_called_with(forcefocus_cli.KS_HASH_FILE, "w")
+        mock_json_dump.assert_called_once()
+        mock_chmod.assert_called_with(forcefocus_cli.KS_HASH_FILE, 0o600)
+        mock_print_data.assert_called_with({"status": "ok", "message": "Passphrase set successfully."}, title="Set Key")
+
+    @patch('forcefocus_cli.os.geteuid')
+    @patch('forcefocus_cli.getpass.getpass')
+    @patch('forcefocus_cli.sys.exit')
+    @patch('builtins.print')
+    def test_set_key_keyboard_interrupt(self, mock_print, mock_exit, mock_getpass, mock_geteuid):
+        """Test set-key handles KeyboardInterrupt gracefully."""
+        mock_geteuid.return_value = 0 # root user
+        mock_getpass.side_effect = KeyboardInterrupt()
+
+        forcefocus_cli.cmd_set_key(None)
+
+        mock_print.assert_called_with("\nAborted.")
+        mock_exit.assert_called_with(1)
+
+class TestCmdStart(unittest.TestCase):
+    def setUp(self):
+        self.args = MagicMock()
+        self.args.mode = "blacklist"
+        self.args.session_type = "standard"
+        self.args.duration = 60
+        self.args.focus = 25
+        self.args.break_time = 5
+        self.args.cycles = 4
+        self.args.schedule_in = None
+        self.args.schedule_at = None
+        self.args.groups = None
+
+        self.patch_send = patch('forcefocus_cli.send_command')
+        self.patch_error = patch('forcefocus_cli.out.print_error')
+        self.patch_data = patch('forcefocus_cli.out.print_data')
+        self.patch_status = patch('forcefocus_cli.console.status')
+
+        self.mock_send = self.patch_send.start()
+        self.mock_error = self.patch_error.start()
+        self.mock_data = self.patch_data.start()
+        self.mock_status = self.patch_status.start()
+
+        self.mock_send.return_value = {"status": "ok", "message": "Started"}
+
+        # Start with agent mode (is_human=False) for simpler tests
+        self.original_is_human = forcefocus_cli.out.is_human
+        forcefocus_cli.out.is_human = False
+
+    def tearDown(self):
+        self.patch_send.stop()
+        self.patch_error.stop()
+        self.patch_data.stop()
+        self.patch_status.stop()
+        forcefocus_cli.out.is_human = self.original_is_human
+
+    def test_standard_session(self):
+        forcefocus_cli.cmd_start(self.args)
+
+        expected_payload = {
+            "action": "start",
+            "duration_minutes": 60,
+            "mode": "blacklist",
+            "session_type": "standard",
+            "focus_minutes": 25,
+            "break_minutes": 5,
+            "cycles": 4
+        }
+
+        self.mock_send.assert_called_once_with(expected_payload)
+        self.mock_data.assert_called_once_with({"status": "ok", "message": "Started"}, title="Start Session")
+
+    def test_pomodoro_session(self):
+        self.args.session_type = "pomodoro"
+
+        forcefocus_cli.cmd_start(self.args)
+
+        expected_payload = {
+            "action": "start",
+            "duration_minutes": (25 + 5) * 4, # 120
+            "mode": "blacklist",
+            "session_type": "pomodoro",
+            "focus_minutes": 25,
+            "break_minutes": 5,
+            "cycles": 4
+        }
+
+        self.mock_send.assert_called_once_with(expected_payload)
+
+    def test_invalid_duration(self):
+        self.args.duration = 0
+
+        forcefocus_cli.cmd_start(self.args)
+
+        self.mock_error.assert_called_once_with("Duration must be a positive number of minutes.", code="INVALID_DURATION")
+
+    def test_schedule_in(self):
+        self.args.schedule_in = 30
+
+        forcefocus_cli.cmd_start(self.args)
+
+        payload = self.mock_send.call_args[0][0]
+        self.assertEqual(payload["schedule_in_minutes"], 30)
+        self.assertNotIn("schedule_at_time", payload)
+
+    def test_schedule_at(self):
+        self.args.schedule_at = "14:30"
+
+        forcefocus_cli.cmd_start(self.args)
+
+        payload = self.mock_send.call_args[0][0]
+        self.assertEqual(payload["schedule_at_time"], "14:30")
+        self.assertNotIn("schedule_in_minutes", payload)
+
+    def test_groups(self):
+        self.args.groups = ["work", "study"]
+
+        forcefocus_cli.cmd_start(self.args)
+
+        payload = self.mock_send.call_args[0][0]
+        self.assertEqual(payload["groups"], ["work", "study"])
+
+    def test_human_output(self):
+        forcefocus_cli.out.is_human = True
+
+        # Setup the context manager mock manually for status
+        mock_ctx = MagicMock()
+        self.mock_status.return_value.__enter__.return_value = mock_ctx
+
+        forcefocus_cli.cmd_start(self.args)
+
+        self.mock_status.assert_called_once()
+        self.mock_send.assert_called_once()
 
 import socket
 import json
