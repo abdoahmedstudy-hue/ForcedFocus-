@@ -31,6 +31,10 @@ def get_continuous_time() -> float:
     # CLOCK_MONOTONIC_RAW on macOS maps to mach_continuous_time (includes sleep time)
     return time.clock_gettime(time.CLOCK_MONOTONIC_RAW)
 
+# Constants for optimizations
+COMMON_PREFIXES = ("www.", "m.", "api.", "cdn.", "static.", "app.", "mail.", "login.", "accounts.",
+                   "mobile.", "touch.", "new.", "dev.", "assets.", "cdn1.", "cdn2.", "v.", "video.")
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # CONFIGURATION
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -45,7 +49,8 @@ SOCK_PATH         = "/var/run/forcefocus.sock"
 HOSTS_PATH        = Path("/private/etc/hosts")
 WEB_HOST          = "127.0.0.1"
 WEB_PORT          = 7070
-WEB_DIR           = Path("/usr/local/share/forcefocus/web")
+_local_web        = Path(__file__).resolve().parent / "web"
+WEB_DIR           = _local_web if _local_web.exists() else Path("/usr/local/share/forcefocus/web")
 SETTINGS_FILE     = CONFIG_DIR / "settings.json"
 
 DEFAULT_SETTINGS = {
@@ -384,6 +389,10 @@ class ForcedFocusDaemon:
         self.dns_proxy = None
         self.original_dns: dict[str, str] = {}
         self.whitelist_resolved: dict[str, list[str]] = {}
+        self._cached_lists: dict | None = None
+        self._cached_lists_mtime: float = 0.0
+        self._cached_groups: dict | None = None
+        self._cached_groups_mtime: float = 0.0
         self.whitelist_count: int = 0
         self.whitelist_expanded_count: int = 0
         self.total_duration_seconds: int = 0
@@ -478,7 +487,17 @@ class ForcedFocusDaemon:
 
     def _load_lists(self) -> dict:
         try:
-            return json.loads(LISTS_FILE.read_text())
+            mtime = LISTS_FILE.stat().st_mtime
+        except FileNotFoundError:
+            return {"blacklist": [], "whitelist": []}
+
+        if self._cached_lists is not None and mtime == self._cached_lists_mtime:
+            return {k: v.copy() if isinstance(v, list) else v for k, v in self._cached_lists.items()}
+
+        try:
+            self._cached_lists = json.loads(LISTS_FILE.read_text())
+            self._cached_lists_mtime = mtime
+            return {k: v.copy() if isinstance(v, list) else v for k, v in self._cached_lists.items()}
         except Exception:
             return {"blacklist": [], "whitelist": []}
 
@@ -487,7 +506,17 @@ class ForcedFocusDaemon:
 
     def _load_groups(self) -> dict:
         try:
-            return json.loads(GROUPS_FILE.read_text())
+            mtime = GROUPS_FILE.stat().st_mtime
+        except FileNotFoundError:
+            return {}
+
+        if self._cached_groups is not None and mtime == self._cached_groups_mtime:
+            return {k: v.copy() if isinstance(v, list) else v for k, v in self._cached_groups.items()}
+
+        try:
+            self._cached_groups = json.loads(GROUPS_FILE.read_text())
+            self._cached_groups_mtime = mtime
+            return {k: v.copy() if isinstance(v, list) else v for k, v in self._cached_groups.items()}
         except Exception:
             return {}
 
@@ -870,8 +899,7 @@ class ForcedFocusDaemon:
 
             self.mode = mode
             self.session_type = cmd.get("session_type", "standard")
-            expiry = datetime.now() + timedelta(minutes=duration_minutes)
-            self.session_expiry = expiry
+            self.session_expiry = datetime.now() + timedelta(minutes=duration_minutes)
             self.active = True
             self.total_duration_seconds = duration_minutes * 60
             self.pending_unlock_at = None
@@ -988,13 +1016,13 @@ class ForcedFocusDaemon:
                 else:
                     msg = f"Blacklist mode: {count} domains blocked for {duration_minutes} min."
 
-            logging.info("Session started (%s) — expires %s.", mode, expiry.strftime("%H:%M:%S"))
+            logging.info("Session started (%s) — expires %s.", mode, self.session_expiry.strftime("%H:%M:%S"))
             return {
                 "status": "ok",
                 "message": msg,
                 "mode": mode,
                 "domains_count": count,
-                "expires_at": expiry.strftime("%H:%M:%S"),
+                "expires_at": self.session_expiry.strftime("%H:%M:%S"),
             }
 
     def _request_stop(self, passphrase: str) -> dict:
@@ -1133,9 +1161,12 @@ class ForcedFocusDaemon:
                             expanded.add(prefix + asset)
 
                 # Expand with common subdomain prefixes for broader /etc/hosts coverage
-                for prefix in ["www.", "m.", "api.", "cdn.", "static.", "app.", "mail.", "login.", "accounts.", 
-                               "mobile.", "touch.", "new.", "dev.", "assets.", "cdn1.", "cdn2.", "v.", "video."]:
-                    if not domain.startswith(prefix):
+                if domain.startswith(COMMON_PREFIXES):
+                    for prefix in COMMON_PREFIXES:
+                        if not domain.startswith(prefix):
+                            expanded.add(prefix + domain)
+                else:
+                    for prefix in COMMON_PREFIXES:
                         expanded.add(prefix + domain)
             return sorted(expanded)
         # Fallback to hard-coded default
@@ -1149,8 +1180,7 @@ class ForcedFocusDaemon:
         expanded = set()
         
         # Layer 1: Always allow common CDN/infrastructure domains
-        for cdn in CDN_INFRASTRUCTURE_DOMAINS:
-            expanded.add(cdn)
+        expanded.update(CDN_INFRASTRUCTURE_DOMAINS)
             
         # Add user domains and Layer 2 bundles
         for d in domains:
@@ -1499,7 +1529,6 @@ class ForcedFocusDaemon:
         
         Can be disabled via settings: {"aggressive_cache_clear": false}
         """
-        # LOW #4: Allow users to opt out of aggressive cache clearing
         if not self.settings.get("aggressive_cache_clear", True):
             logging.debug("Aggressive cache clearing disabled by settings.")
             return
@@ -1678,22 +1707,25 @@ class ForcedFocusDaemon:
 
     def _kill_vpns(self):
         """Terminate known VPN processes that could bypass host-file blocking."""
-        for proc in VPN_PROCESSES:
-            try:
-                # Targeted killall
-                subprocess.run(["killall", "-9", proc], capture_output=True, timeout=2)
-            except Exception:
-                pass
+        if not VPN_PROCESSES:
+            return
+        try:
+            # Targeted killall for all processes at once to reduce subprocess overhead
+            # Targeted killall
+            subprocess.run(["killall", "-9"] + VPN_PROCESSES, capture_output=True, timeout=2)
+        except Exception:
+            pass
 
     def _kill_restricted_apps(self):
         """Terminate restricted processes (VPNs, bypass browsers, tools) during active sessions."""
-        for proc in RESTRICTED_PROCESSES:
-            try:
-                subprocess.run(["killall", "-9", proc], capture_output=True, timeout=2)
-            except subprocess.TimeoutExpired:
-                pass
-            except OSError:
-                pass
+        if not RESTRICTED_PROCESSES:
+            return
+        try:
+            subprocess.run(["killall", "-9"] + RESTRICTED_PROCESSES, capture_output=True, timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        except OSError:
+            pass
 
     # ── Watchdog ──────────────────────────────────────────────────────────────
 
@@ -2123,14 +2155,11 @@ class ForcedFocusDaemon:
             return {"status": "error", "message": f"Unknown action: {action}"}
 
     def _http_server(self):
-        # LOW #2: Determine web directory without mutating global state
-        local_web = Path(__file__).parent / "web"
-        web_dir = local_web if local_web.exists() else WEB_DIR
         try:
             server = EmbeddedHTTPServer((WEB_HOST, WEB_PORT), EmbeddedWebHandler)
             server.daemon_ref = self
-            server.web_dir = web_dir
-            logging.info("Web UI listening at http://%s:%d (serving from %s)", WEB_HOST, WEB_PORT, web_dir)
+            server.web_dir = WEB_DIR
+            logging.info("Web UI listening at http://%s:%d (serving from %s)", WEB_HOST, WEB_PORT, WEB_DIR)
             server.serve_forever()
         except Exception as exc:
             logging.error("HTTP server failed: %s", exc)
@@ -2151,7 +2180,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
             return True
         if origin in ("http://localhost:7070", "http://127.0.0.1:7070"):
             return True
-        if origin.startswith("chrome-extension://"):
+        if origin == "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc":
             return True
         return False
 
@@ -2165,7 +2194,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
 
     def _get_cors_origin(self) -> str:
         origin = self.headers.get("Origin")
-        if origin and (origin in ("http://localhost:7070", "http://127.0.0.1:7070") or origin.startswith("chrome-extension://")):
+        if origin and (origin in ("http://localhost:7070", "http://127.0.0.1:7070") or origin == "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc"):
             return origin
         return "http://127.0.0.1:7070"
 
@@ -2350,12 +2379,10 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-API-Token")
         self.end_headers()
 
-    # LOW #3: Explicitly deny unsupported HTTP methods
-    def do_PUT(self):
-        self._send_json({"status": "error", "message": "Method not allowed."}, 405)
-
-    def do_PATCH(self):
-        self._send_json({"status": "error", "message": "Method not allowed."}, 405)
+    def __getattr__(self, name):
+        if name.startswith("do_"):
+            return lambda: self._send_json({"status": "error", "message": "Method not allowed."}, 405)
+        raise AttributeError(name)
 
 
 def main():
