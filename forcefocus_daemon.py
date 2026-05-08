@@ -898,8 +898,7 @@ class ForcedFocusDaemon:
 
             self.mode = mode
             self.session_type = cmd.get("session_type", "standard")
-            expiry = datetime.now() + timedelta(minutes=duration_minutes)
-            self.session_expiry = expiry
+            self.session_expiry = datetime.now() + timedelta(minutes=duration_minutes)
             self.active = True
             self.total_duration_seconds = duration_minutes * 60
             self.pending_unlock_at = None
