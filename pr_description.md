@@ -1,20 +1,17 @@
-🌊 Flow: Reliability fix - AbortControllers and Button Disabling
+## Title: "🧪 Add comprehensive test suite for CLI send_command"
 
-💡 What:
-- Implemented `AbortController` functionality inside the `api` utility across `app.js`, `menubar.js`, and `settings.js`.
-- Disabled UI mutation buttons (`btnStart`, `btnConfirmStop`, `addDomain`, `removeBtn`, `btnUnlockConfirm`, `saveSettings`, `saveGroup`, etc.) when their corresponding requests are pending.
-- Fixed a minor bug with `raw.split` missing an escape character when adding new domains.
-- Fixed a test asserting an older version of the chrome-extension UUID, updating it to the current UUID (`hcgpgflhkpdccdjkkobofpaemcgjmhdc`).
+## Description
+🎯 **What:** The testing gap addressed
+The `send_command` function in `forcefocus_cli.py` lacked test coverage, despite being the critical bridge between the CLI and the daemon via Unix sockets. It handles socket connections, serialization, and error scenarios.
 
-🎯 Why:
-- Fast clicking would previously cause concurrent POST/DELETE duplicate requests, leading to ghost errors.
-- Polling for GET requests without `AbortController` over slow networks risked older requests overwriting new states and caused overlapping race conditions.
+📊 **Coverage:** What scenarios are now tested
+Tests have been added in `tests/test_forcefocus_cli.py` under the new `TestSendCommand` class. Covered scenarios include:
+- `test_daemon_not_found`: Triggered when the socket file is missing.
+- `test_connection_refused`: Caught `ConnectionRefusedError` from socket connection.
+- `test_timeout`: Caught `socket.timeout` during connection or receive.
+- `test_socket_error`: General unhandled `Exception` occurring during socket communication.
+- `test_empty_response`: Daemon accepts the connection but returns an empty payload.
+- `test_success`: Valid JSON command is sent, the daemon processes it, and returns a correct JSON response.
 
-🛡️ Resilience:
-- Single-flight concurrency is now strongly enforced.
-- Re-triggering API calls is explicitly blocked through UI `disabled=true` attributes while async calls to the backend resolve.
-- Active polling requests are aborted gracefully avoiding data clashing when refreshing component states.
-
-🧪 Testing:
-- Verified syntax dynamically using node format evaluators.
-- All 41 daemon Python tests passed, ensuring the mocked origin header reflects the correct extension namespace.
+✨ **Result:** The improvement in test coverage
+The CLI's core communication mechanism is now verified, ensuring failures and successful transmissions are handled properly without side effects. Changes to IPC protocols or socket configurations will now be caught dynamically by the test suite, making future refactoring safer. All 47 tests pass.
