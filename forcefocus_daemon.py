@@ -2091,18 +2091,15 @@ class ForcedFocusDaemon:
         sock.settimeout(SOCKET_TIMEOUT)
         logging.info("Command socket listening at %s.", SOCK_PATH)
 
-        while True:
-            try:
-                conn, _ = sock.accept()
-            except socket.timeout:
-                continue
-            except OSError as exc:
-                logging.error("Socket accept error: %s", exc)
-                time.sleep(1)
-                continue
+        active_connections = 0
+        MAX_CONNECTIONS = 10
+        conn_lock = threading.Lock()
+
+        def handle_client(conn):
+            nonlocal active_connections
             try:
                 conn.settimeout(5.0)
-                MAX_MSG_SIZE = 1 * 1024 * 1024  # 1MB — generous for any valid command
+                MAX_MSG_SIZE = 1 * 1024 * 1024  # 1MB
                 chunks = []
                 total_size = 0
                 while True:
@@ -2117,10 +2114,9 @@ class ForcedFocusDaemon:
                         break
                     chunks.append(chunk)
                 raw = b''.join(chunks).decode("utf-8").strip()
-                if not raw:
-                    continue
-                response = self._dispatch_command(raw)
-                conn.sendall(json.dumps(response).encode("utf-8"))
+                if raw:
+                    response = self._dispatch_command(raw)
+                    conn.sendall(json.dumps(response).encode("utf-8"))
             except Exception as exc:
                 logging.error("Socket handler error: %s", exc)
                 try:
@@ -2129,6 +2125,27 @@ class ForcedFocusDaemon:
                     pass
             finally:
                 conn.close()
+                with conn_lock:
+                    active_connections -= 1
+
+        while True:
+            try:
+                conn, _ = sock.accept()
+            except socket.timeout:
+                continue
+            except OSError as exc:
+                logging.error("Socket accept error: %s", exc)
+                time.sleep(1)
+                continue
+
+            with conn_lock:
+                if active_connections >= MAX_CONNECTIONS:
+                    logging.warning("Socket connection limit reached. Rejecting client.")
+                    conn.close()
+                    continue
+                active_connections += 1
+
+            threading.Thread(target=handle_client, args=(conn,), daemon=True).start()
 
     def _dispatch_command(self, raw: str) -> dict:
         try:
