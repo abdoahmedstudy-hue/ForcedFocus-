@@ -89,6 +89,120 @@ class TestForceFocusCLIParser(unittest.TestCase):
 
 
 
+class TestCmdStart(unittest.TestCase):
+    def setUp(self):
+        self.args = MagicMock()
+        self.args.mode = "blacklist"
+        self.args.session_type = "standard"
+        self.args.duration = 60
+        self.args.focus = 25
+        self.args.break_time = 5
+        self.args.cycles = 4
+        self.args.schedule_in = None
+        self.args.schedule_at = None
+        self.args.groups = None
+
+        self.patch_send = patch('forcefocus_cli.send_command')
+        self.patch_error = patch('forcefocus_cli.out.print_error')
+        self.patch_data = patch('forcefocus_cli.out.print_data')
+        self.patch_status = patch('forcefocus_cli.console.status')
+
+        self.mock_send = self.patch_send.start()
+        self.mock_error = self.patch_error.start()
+        self.mock_data = self.patch_data.start()
+        self.mock_status = self.patch_status.start()
+
+        self.mock_send.return_value = {"status": "ok", "message": "Started"}
+
+        # Start with agent mode (is_human=False) for simpler tests
+        self.original_is_human = forcefocus_cli.out.is_human
+        forcefocus_cli.out.is_human = False
+
+    def tearDown(self):
+        self.patch_send.stop()
+        self.patch_error.stop()
+        self.patch_data.stop()
+        self.patch_status.stop()
+        forcefocus_cli.out.is_human = self.original_is_human
+
+    def test_standard_session(self):
+        forcefocus_cli.cmd_start(self.args)
+
+        expected_payload = {
+            "action": "start",
+            "duration_minutes": 60,
+            "mode": "blacklist",
+            "session_type": "standard",
+            "focus_minutes": 25,
+            "break_minutes": 5,
+            "cycles": 4
+        }
+
+        self.mock_send.assert_called_once_with(expected_payload)
+        self.mock_data.assert_called_once_with({"status": "ok", "message": "Started"}, title="Start Session")
+
+    def test_pomodoro_session(self):
+        self.args.session_type = "pomodoro"
+
+        forcefocus_cli.cmd_start(self.args)
+
+        expected_payload = {
+            "action": "start",
+            "duration_minutes": (25 + 5) * 4, # 120
+            "mode": "blacklist",
+            "session_type": "pomodoro",
+            "focus_minutes": 25,
+            "break_minutes": 5,
+            "cycles": 4
+        }
+
+        self.mock_send.assert_called_once_with(expected_payload)
+
+    def test_invalid_duration(self):
+        self.args.duration = 0
+
+        forcefocus_cli.cmd_start(self.args)
+
+        self.mock_error.assert_called_once_with("Duration must be a positive number of minutes.", code="INVALID_DURATION")
+
+    def test_schedule_in(self):
+        self.args.schedule_in = 30
+
+        forcefocus_cli.cmd_start(self.args)
+
+        payload = self.mock_send.call_args[0][0]
+        self.assertEqual(payload["schedule_in_minutes"], 30)
+        self.assertNotIn("schedule_at_time", payload)
+
+    def test_schedule_at(self):
+        self.args.schedule_at = "14:30"
+
+        forcefocus_cli.cmd_start(self.args)
+
+        payload = self.mock_send.call_args[0][0]
+        self.assertEqual(payload["schedule_at_time"], "14:30")
+        self.assertNotIn("schedule_in_minutes", payload)
+
+    def test_groups(self):
+        self.args.groups = ["work", "study"]
+
+        forcefocus_cli.cmd_start(self.args)
+
+        payload = self.mock_send.call_args[0][0]
+        self.assertEqual(payload["groups"], ["work", "study"])
+
+    def test_human_output(self):
+        forcefocus_cli.out.is_human = True
+
+        # Setup the context manager mock manually for status
+        mock_ctx = MagicMock()
+        self.mock_status.return_value.__enter__.return_value = mock_ctx
+
+        forcefocus_cli.cmd_start(self.args)
+
+        self.mock_status.assert_called_once()
+        self.mock_send.assert_called_once()
+
 import socket
 import json
 import os
@@ -191,6 +305,7 @@ class TestSendCommand(unittest.TestCase):
         self.assertEqual(result, response_data)
         mock_sock_inst.connect.assert_called_once_with(forcefocus_cli.SOCK_PATH)
         mock_sock_inst.sendall.assert_called_once_with(json.dumps({"cmd": "status"}).encode("utf-8"))
+
 
 if __name__ == '__main__':
     unittest.main()
