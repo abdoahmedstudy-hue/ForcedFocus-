@@ -31,6 +31,10 @@ def get_continuous_time() -> float:
     # CLOCK_MONOTONIC_RAW on macOS maps to mach_continuous_time (includes sleep time)
     return time.clock_gettime(time.CLOCK_MONOTONIC_RAW)
 
+# Constants for optimizations
+COMMON_PREFIXES = ("www.", "m.", "api.", "cdn.", "static.", "app.", "mail.", "login.", "accounts.",
+                   "mobile.", "touch.", "new.", "dev.", "assets.", "cdn1.", "cdn2.", "v.", "video.")
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # CONFIGURATION
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1157,9 +1161,12 @@ class ForcedFocusDaemon:
                             expanded.add(prefix + asset)
 
                 # Expand with common subdomain prefixes for broader /etc/hosts coverage
-                for prefix in ["www.", "m.", "api.", "cdn.", "static.", "app.", "mail.", "login.", "accounts.", 
-                               "mobile.", "touch.", "new.", "dev.", "assets.", "cdn1.", "cdn2.", "v.", "video."]:
-                    if not domain.startswith(prefix):
+                if domain.startswith(COMMON_PREFIXES):
+                    for prefix in COMMON_PREFIXES:
+                        if not domain.startswith(prefix):
+                            expanded.add(prefix + domain)
+                else:
+                    for prefix in COMMON_PREFIXES:
                         expanded.add(prefix + domain)
             return sorted(expanded)
         # Fallback to hard-coded default
