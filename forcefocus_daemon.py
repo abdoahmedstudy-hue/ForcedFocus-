@@ -49,7 +49,8 @@ SOCK_PATH         = "/var/run/forcefocus.sock"
 HOSTS_PATH        = Path("/private/etc/hosts")
 WEB_HOST          = "127.0.0.1"
 WEB_PORT          = 7070
-WEB_DIR           = Path("/usr/local/share/forcefocus/web")
+_local_web        = Path(__file__).resolve().parent / "web"
+WEB_DIR           = _local_web if _local_web.exists() else Path("/usr/local/share/forcefocus/web")
 SETTINGS_FILE     = CONFIG_DIR / "settings.json"
 
 DEFAULT_SETTINGS = {
@@ -2154,14 +2155,11 @@ class ForcedFocusDaemon:
             return {"status": "error", "message": f"Unknown action: {action}"}
 
     def _http_server(self):
-        # LOW #2: Determine web directory without mutating global state
-        local_web = Path(__file__).parent / "web"
-        web_dir = local_web if local_web.exists() else WEB_DIR
         try:
             server = EmbeddedHTTPServer((WEB_HOST, WEB_PORT), EmbeddedWebHandler)
             server.daemon_ref = self
-            server.web_dir = web_dir
-            logging.info("Web UI listening at http://%s:%d (serving from %s)", WEB_HOST, WEB_PORT, web_dir)
+            server.web_dir = WEB_DIR
+            logging.info("Web UI listening at http://%s:%d (serving from %s)", WEB_HOST, WEB_PORT, WEB_DIR)
             server.serve_forever()
         except Exception as exc:
             logging.error("HTTP server failed: %s", exc)
