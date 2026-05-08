@@ -157,5 +157,25 @@ class TestForcedFocusDaemon(unittest.TestCase):
         mock_logging_error.assert_called_once()
         self.assertIn("_enforce_doh_block failed: %s", mock_logging_error.call_args[0][0])
 
+
+    @patch('forcefocus_daemon.ForcedFocusDaemon._atomic_write_json')
+    def test_persist_session_lock_success(self, mock_atomic_write):
+        self.daemon.schedules = []
+        self.daemon.active = False
+        self.daemon._persist_session_lock()
+        mock_atomic_write.assert_called_once()
+        written_data = mock_atomic_write.call_args[0][1]
+        self.assertEqual(written_data, {"schedules": []})
+
+    @patch('forcefocus_daemon.logging.error')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._atomic_write_json', side_effect=Exception("Simulated write failure"))
+    def test_persist_session_lock_error(self, mock_atomic_write, mock_logging_error):
+        self.daemon.schedules = []
+        self.daemon.active = False
+        self.daemon._persist_session_lock()
+        mock_atomic_write.assert_called_once()
+        mock_logging_error.assert_called_once()
+        self.assertIn("Failed to persist session.lock", mock_logging_error.call_args[0][0])
+
 if __name__ == '__main__':
     unittest.main()
