@@ -1,3 +1,14 @@
+import sys
+import types
+from unittest.mock import patch, MagicMock
+
+rich_mock = types.ModuleType('rich')
+sys.modules['rich'] = rich_mock
+for sub_module in ['console', 'panel', 'table', 'text', 'box', 'prompt', 'layout', 'live', 'spinner', 'progress', 'theme']:
+    sys.modules[f'rich.{sub_module}'] = MagicMock()
+
+import unittest
+import argparse
 import unittest
 from unittest.mock import patch, MagicMock
 import argparse
