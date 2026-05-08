@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ForcedFocus",
-  "description": "Quick access to ForcedFocus — unbreakable website blocker for macOS.",
+  "description": "Quick access to ForcedFocus \u2014 unbreakable website blocker for macOS.",
   "version": "2.2.0",
   "permissions": [
     "alarms",
@@ -44,9 +44,14 @@
   ],
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start"
     }
-  ]
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuRoaxYstW1Uyph1jbyuRnpO+pkwDZhmXOMnbYbFRSDuTxNILMW+5OoOJ6CE1/SDlsDyxMYQB1SJBludrmBdoZXm93q3KTNad4OCmYzkIkUzB3bMhhq5paYZ2OtWglsiXcbMxMpf6Z7hIOb6clg7JwtiKY6nlRIwjvt+xcMJmR1l7E2OXdMyPQ+fixDm+MS6Ij9oeV3Tg38qTLPlOgMF2Iw6fuQEkYVPfDXLdJBDgKHnNCTki6w0TrYt/8V7/nhpwtKz8Pn68oVNjcD0TBhT/Sb7dPd4u6NsVvFA3kHHgkp4o5Ibyf27R7bHecrcOx5JbezVhwgaPJWjP9fxzU/L07wIDAQAB"
 }
