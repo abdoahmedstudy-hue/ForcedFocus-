@@ -385,6 +385,99 @@ class TestSendCommand(unittest.TestCase):
         mock_sock_inst.connect.assert_called_once_with(forcefocus_cli.SOCK_PATH)
         mock_sock_inst.sendall.assert_called_once_with(json.dumps({"cmd": "status"}).encode("utf-8"))
 
+class TestForceFocusCLICmdWeb(unittest.TestCase):
+    def setUp(self):
+        self.args = MagicMock()
+
+    @patch('forcefocus_cli.out')
+    @patch('forcefocus_cli.Path')
+    @patch('forcefocus_cli.subprocess.run')
+    def test_cmd_web_start_default_path(self, mock_run, mock_path_class, mock_out):
+        self.args.action = "start"
+
+        mock_path_instance = MagicMock()
+        mock_path_instance.exists.return_value = True
+        mock_path_class.return_value = mock_path_instance
+
+        forcefocus_cli.cmd_web(self.args)
+
+        mock_out.print_data.assert_called_once_with({"status": "ok", "message": "Starting web interface..."}, title="Web UI")
+        mock_run.assert_called_once_with([sys.executable, str(mock_path_instance)])
+        mock_out.print_error.assert_not_called()
+
+    @patch('forcefocus_cli.out')
+    @patch('forcefocus_cli.Path')
+    @patch('forcefocus_cli.subprocess.run')
+    def test_cmd_web_start_fallback_path(self, mock_run, mock_path_class, mock_out):
+        self.args.action = "start"
+
+        mock_default_path = MagicMock()
+        mock_default_path.exists.return_value = False
+
+        mock_fallback_path = MagicMock()
+        mock_fallback_path.exists.return_value = True
+
+        mock_parent = MagicMock()
+        mock_parent.__truediv__.return_value = mock_fallback_path
+
+        mock_file_path = MagicMock()
+        mock_file_path.parent = mock_parent
+
+        def path_side_effect(*args, **kwargs):
+            if args and args[0] == "/usr/local/bin/forcefocus_web.py":
+                return mock_default_path
+            return mock_file_path
+
+        mock_path_class.side_effect = path_side_effect
+
+        forcefocus_cli.cmd_web(self.args)
+
+        mock_out.print_data.assert_called_once_with({"status": "ok", "message": "Starting web interface..."}, title="Web UI")
+        mock_run.assert_called_once_with([sys.executable, str(mock_fallback_path)])
+        mock_out.print_error.assert_not_called()
+
+    @patch('forcefocus_cli.out')
+    @patch('forcefocus_cli.Path')
+    @patch('forcefocus_cli.subprocess.run')
+    def test_cmd_web_start_not_found(self, mock_run, mock_path_class, mock_out):
+        self.args.action = "start"
+
+        mock_default_path = MagicMock()
+        mock_default_path.exists.return_value = False
+
+        mock_fallback_path = MagicMock()
+        mock_fallback_path.exists.return_value = False
+
+        mock_parent = MagicMock()
+        mock_parent.__truediv__.return_value = mock_fallback_path
+
+        mock_file_path = MagicMock()
+        mock_file_path.parent = mock_parent
+
+        def path_side_effect(*args, **kwargs):
+            if args and args[0] == "/usr/local/bin/forcefocus_web.py":
+                return mock_default_path
+            return mock_file_path
+
+        mock_path_class.side_effect = path_side_effect
+
+        forcefocus_cli.cmd_web(self.args)
+
+        mock_out.print_data.assert_called_once_with({"status": "ok", "message": "Starting web interface..."}, title="Web UI")
+        mock_run.assert_not_called()
+        mock_out.print_error.assert_called_once_with("Web server script not found.", code="FILE_NOT_FOUND")
+
+    @patch('forcefocus_cli.out')
+    @patch('forcefocus_cli.subprocess.run')
+    def test_cmd_web_stop(self, mock_run, mock_out):
+        self.args.action = "stop"
+
+        forcefocus_cli.cmd_web(self.args)
+
+        mock_out.print_data.assert_called_once_with({"status": "ok", "message": "Stopping web interface..."}, title="Web UI")
+        mock_run.assert_not_called()
+        mock_out.print_error.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()
