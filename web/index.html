@@ -36,6 +36,10 @@
                 </header>
                 <!-- Timer Section -->
                 <section class="timer-section" id="timerSection">
+                    <div id="activeIntentContainer" style="display: none; margin-bottom: 2rem; text-align: center; max-width: 80%; animation: slideDown 0.3s ease;">
+                        <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">🎯 Focus Intent</div>
+                        <div id="activeIntent" style="font-size: 24px; font-weight: 700; color: var(--text); line-height: 1.3;"></div>
+                    </div>
                     <div class="timer-ring" id="timerRing">
                         <svg viewBox="0 0 200 200">
                             <defs>
@@ -177,6 +181,16 @@
                                     </div>
                                 </div>
                                 <p class="pomo-summary" id="pomoSummary">Total: 2h 00m (4 × 25m focus + 5m break)</p>
+                            </div>
+                        </div>
+
+                        <div class="card" id="intentCard">
+                            <div class="card-header">
+                                <h2 class="card-title">🎯 Focus Intent</h2>
+                                <p class="card-desc">What is your single main goal for this session? (Optional)</p>
+                            </div>
+                            <div class="card-body">
+                                <input type="text" id="sessionIntent" placeholder="e.g. Write the Q3 Report" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.02); color: var(--text-primary); font-family: inherit; font-size: 14px; outline: none; transition: border-color 0.2s;">
                             </div>
                         </div>
 

@@ -223,6 +223,17 @@ function renderStatus(data) {
 
     if (idleControls) idleControls.classList.toggle('hidden', active);
     if (activeControls) activeControls.classList.toggle('hidden', !active);
+
+    const intentContainer = $('#activeIntentContainer');
+    const intentText = $('#activeIntent');
+    if (intentContainer && intentText) {
+        if (active && data.intent) {
+            intentText.textContent = data.intent;
+            intentContainer.style.display = 'block';
+        } else {
+            intentContainer.style.display = 'none';
+        }
+    }
     if (stopDialog) stopDialog.classList.add('hidden');
 
     if (active) {
@@ -438,6 +449,9 @@ function initEvents() {
             btnStart.disabled = true;
 
             let payload = {};
+            const intentInput = $('#sessionIntent');
+            const intentVal = intentInput && intentInput.value.trim() !== '' ? intentInput.value.trim() : null;
+
             if (sessionType === 'pomodoro') {
                 const totalMin = (pomoFocusMin + pomoBreakMin) * pomoCycles;
                 totalSecs = totalMin * 60;
@@ -448,7 +462,8 @@ function initEvents() {
                     focus_minutes: pomoFocusMin,
                     break_minutes: pomoBreakMin,
                     cycles: pomoCycles,
-                    groups: Array.from(selectedGroups)
+                    groups: Array.from(selectedGroups),
+                    intent: intentVal
                 };
             } else {
                 totalSecs = duration * 60;
@@ -456,7 +471,8 @@ function initEvents() {
                     duration, 
                     mode, 
                     session_type: 'standard',
-                    groups: Array.from(selectedGroups) 
+                    groups: Array.from(selectedGroups),
+                    intent: intentVal
                 };
             }
 
