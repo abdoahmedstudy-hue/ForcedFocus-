@@ -131,5 +131,31 @@ class TestForcedFocusDaemon(unittest.TestCase):
         mock_remove.assert_called_once()
         mock_persist.assert_called_once()
 
+
+    @patch('forcefocus_daemon.subprocess.run')
+    @patch('forcefocus_daemon.Path.read_text', return_value="original hosts")
+    @patch('forcefocus_daemon.Path.write_text')
+    def test_enforce_doh_block_success(self, mock_write_text, mock_read_text, mock_subprocess_run):
+        self.daemon.session_expiry = datetime.datetime.now()
+        self.daemon._enforce_doh_block()
+
+        mock_read_text.assert_called_once()
+        mock_write_text.assert_called_once()
+        self.assertEqual(mock_subprocess_run.call_count, 2)
+
+        # Verify write contains DoH block comments
+        written_content = mock_write_text.call_args[0][0]
+        self.assertIn("# Mode: WHITELIST (DoH block)", written_content)
+        self.assertIn("# DoH providers (anti-bypass)", written_content)
+
+    @patch('forcefocus_daemon.logging.error')
+    @patch('forcefocus_daemon.Path.read_text', side_effect=Exception("Read failed"))
+    @patch('forcefocus_daemon.subprocess.run')
+    def test_enforce_doh_block_error(self, mock_subprocess_run, mock_read_text, mock_logging_error):
+        self.daemon._enforce_doh_block()
+
+        mock_logging_error.assert_called_once()
+        self.assertIn("_enforce_doh_block failed: %s", mock_logging_error.call_args[0][0])
+
 if __name__ == '__main__':
     unittest.main()
