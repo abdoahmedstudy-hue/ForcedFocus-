@@ -16,7 +16,6 @@ NC='\033[0m'
 
 DAEMON_DST="/usr/local/bin/forcefocus_daemon.py"
 CLI_DST="/usr/local/bin/forcefocus"
-WEB_DST="/usr/local/bin/forcefocus_web.py"
 PLIST_DST="/Library/LaunchDaemons/com.forcefocus.daemon.plist"
 CONFIG_DIR="/etc/forcefocus"
 WEB_DIR_DST="/usr/local/share/forcefocus"
