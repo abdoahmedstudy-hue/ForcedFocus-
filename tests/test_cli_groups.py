@@ -9,6 +9,10 @@ for sub_module in ['console', 'panel', 'table', 'text', 'box', 'prompt', 'layout
 
 import unittest
 import argparse
+import unittest
+from unittest.mock import patch, MagicMock
+import argparse
+
 import forcefocus_cli
 
 class TestCliGroups(unittest.TestCase):
