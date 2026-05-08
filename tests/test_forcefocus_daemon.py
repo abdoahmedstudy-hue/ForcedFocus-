@@ -94,6 +94,32 @@ class TestForcedFocusDaemon(unittest.TestCase):
         mock_enforce.assert_called_once()
         mock_write.assert_called_once()
 
+    def test_start_session_invalid_duration_type(self):
+        cmd = {"action": "start", "duration_minutes": "invalid", "mode": "blacklist"}
+        result = self.daemon._start_session(cmd)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["message"], "Invalid duration.")
+
+    def test_start_session_invalid_duration_range(self):
+        # Too low
+        cmd = {"action": "start", "duration_minutes": 0, "mode": "blacklist"}
+        result = self.daemon._start_session(cmd)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["message"], "Duration must be 1–1440 minutes.")
+
+        # Too high
+        cmd = {"action": "start", "duration_minutes": 1441, "mode": "blacklist"}
+        result = self.daemon._start_session(cmd)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["message"], "Duration must be 1–1440 minutes.")
+
+    def test_start_session_invalid_mode(self):
+        cmd = {"action": "start", "duration_minutes": 60, "mode": "greylist"}
+        result = self.daemon._start_session(cmd)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["message"], "Invalid mode.")
+
+
     @patch('forcefocus_daemon.subprocess.run')
     @patch('forcefocus_daemon.ForcedFocusDaemon._flush_dns')
     @patch('forcefocus_daemon.ForcedFocusDaemon._enforce_browser_policies')
@@ -158,6 +184,48 @@ class TestForcedFocusDaemon(unittest.TestCase):
         self.assertIn("_enforce_doh_block failed: %s", mock_logging_error.call_args[0][0])
 
 
+    @patch('forcefocus_daemon.ForcedFocusDaemon._atomic_write_json')
+    def test_persist_session_lock_success(self, mock_atomic_write):
+        self.daemon.schedules = []
+        self.daemon.active = False
+        self.daemon._persist_session_lock()
+        mock_atomic_write.assert_called_once()
+        written_data = mock_atomic_write.call_args[0][1]
+        self.assertEqual(written_data, {"schedules": []})
+
+    @patch('forcefocus_daemon.logging.error')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._atomic_write_json', side_effect=Exception("Simulated write failure"))
+    def test_persist_session_lock_error(self, mock_atomic_write, mock_logging_error):
+        self.daemon.schedules = []
+        self.daemon.active = False
+        self.daemon._persist_session_lock()
+        mock_atomic_write.assert_called_once()
+        mock_logging_error.assert_called_once()
+        self.assertIn("Failed to persist session.lock", mock_logging_error.call_args[0][0])
+    @patch('forcefocus_daemon.logging.info')
+    @patch('forcefocus_daemon.SESSION_LOCK')
+    def test_restore_session_no_lock(self, mock_session_lock, mock_logging_info):
+        # We need to unmock _restore_session just for these tests, as it was mocked in setUp
+        with patch('forcefocus_daemon.ForcedFocusDaemon._load_settings', return_value={}):
+            daemon = ForcedFocusDaemon()
+            mock_session_lock.exists.return_value = False
+            daemon._restore_session()
+            mock_session_lock.exists.assert_called_once()
+            mock_logging_info.assert_called_with("No persisted session found. Daemon idle.")
+            mock_session_lock.read_text.assert_not_called()
+
+    @patch('forcefocus_daemon.logging.error')
+    @patch('forcefocus_daemon.SESSION_LOCK')
+    def test_restore_session_corrupt_lock(self, mock_session_lock, mock_logging_error):
+        with patch('forcefocus_daemon.ForcedFocusDaemon._load_settings', return_value={}):
+            daemon = ForcedFocusDaemon()
+            mock_session_lock.exists.return_value = True
+            mock_session_lock.read_text.return_value = "invalid json"
+            daemon._restore_session()
+            mock_session_lock.exists.assert_called_once()
+            mock_session_lock.read_text.assert_called_once()
+            mock_session_lock.unlink.assert_called_once_with(missing_ok=True)
+            self.assertTrue(mock_logging_error.called)
     @patch('forcefocus_daemon.logging.warning')
     @patch('forcefocus_daemon.subprocess.run')
     @patch('forcefocus_daemon.ForcedFocusDaemon._strip_block', return_value="stripped")
