@@ -80,7 +80,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, WKScriptM
     }
     func loadMenuBarPage() {
         let tokenFile = URL(fileURLWithPath: "/etc/forcefocus/api_token")
-        let token = (try? String(contentsOf: tokenFile).trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        let token = (try? String(contentsOf: tokenFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
         guard let url = URL(string: "http://127.0.0.1:7070/menubar?token=\(token)") else { return }
         webView?.load(URLRequest(url: url))
     }
@@ -135,7 +135,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, WKScriptM
     }
     @objc func openDashboard() {
         let tokenFile = URL(fileURLWithPath: "/etc/forcefocus/api_token")
-        let token = (try? String(contentsOf: tokenFile).trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        let token = (try? String(contentsOf: tokenFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
         if let url = URL(string: "http://127.0.0.1:7070/?token=\(token)") {
             NSWorkspace.shared.open(url)
         }

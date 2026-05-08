@@ -61,7 +61,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Verify source files
-for f in "$DAEMON_SRC" "$CLI_SRC" "$WEB_SRC" "$PLIST_SRC"; do
+for f in "$DAEMON_SRC" "$CLI_SRC" "$PLIST_SRC"; do
     if [[ ! -f "$f" ]]; then
         echo -e "${RED}${BOLD} ✗ Missing Source${NC}: ${f}"
         exit 1
