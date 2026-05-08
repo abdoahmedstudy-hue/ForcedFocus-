@@ -87,5 +87,87 @@ class TestForceFocusCLIParser(unittest.TestCase):
         self.assertEqual(args.domains, ["domain.com", "domain.org"])
         self.assertEqual(args.func, forcefocus_cli.cmd_groups)
 
+
+class TestForceFocusCLISetKey(unittest.TestCase):
+    @patch('forcefocus_cli.os.geteuid')
+    @patch('forcefocus_cli.sys.exit')
+    @patch('forcefocus_cli.out.print_error')
+    def test_set_key_non_root(self, mock_print_error, mock_exit, mock_geteuid):
+        """Test set-key command when not run as root."""
+        mock_geteuid.return_value = 1000 # non-root user
+        mock_print_error.side_effect = SystemExit(1)
+        with self.assertRaises(SystemExit):
+            forcefocus_cli.cmd_set_key(None)
+
+        # Verify it errors out correctly
+        mock_print_error.assert_called_with("Must run as root to set the kill-switch passphrase.", code="PERM_DENIED", suggestion="Use: sudo forcefocus set-key")
+
+    @patch('forcefocus_cli.os.geteuid')
+    @patch('forcefocus_cli.getpass.getpass')
+    @patch('forcefocus_cli.out.print_error')
+    def test_set_key_empty_passphrase(self, mock_print_error, mock_getpass, mock_geteuid):
+        """Test set-key command when an empty passphrase is provided."""
+        mock_geteuid.return_value = 0 # root user
+
+        # Empty string on first prompt
+        mock_getpass.side_effect = ["", ""]
+        mock_print_error.side_effect = SystemExit(1)
+        with self.assertRaises(SystemExit):
+            forcefocus_cli.cmd_set_key(None)
+
+        mock_print_error.assert_called_with("Passphrase cannot be empty.", code="INVALID_INPUT")
+
+    @patch('forcefocus_cli.os.geteuid')
+    @patch('forcefocus_cli.getpass.getpass')
+    @patch('forcefocus_cli.out.print_error')
+    def test_set_key_mismatched_passphrases(self, mock_print_error, mock_getpass, mock_geteuid):
+        """Test set-key command when passphrases do not match."""
+        mock_geteuid.return_value = 0 # root user
+
+        # Different strings
+        mock_getpass.side_effect = ["password123", "different123"]
+        mock_print_error.side_effect = SystemExit(1)
+        with self.assertRaises(SystemExit):
+            forcefocus_cli.cmd_set_key(None)
+
+        mock_print_error.assert_called_with("Passphrases do not match.", code="MISMATCH")
+
+    @patch('forcefocus_cli.os.geteuid')
+    @patch('forcefocus_cli.getpass.getpass')
+    @patch('forcefocus_cli.os.urandom')
+    @patch('forcefocus_cli.json.dump')
+    @patch('forcefocus_cli.os.chmod')
+    @patch('builtins.open', new_callable=unittest.mock.mock_open)
+    @patch('forcefocus_cli.out.print_data')
+    @patch('pathlib.Path.mkdir')
+    def test_set_key_success(self, mock_mkdir, mock_print_data, mock_open, mock_chmod, mock_json_dump, mock_urandom, mock_getpass, mock_geteuid):
+        """Test successful set-key command execution."""
+        mock_geteuid.return_value = 0 # root user
+        mock_getpass.side_effect = ["mypassword", "mypassword"]
+        mock_urandom.return_value = b'1234567890abcdef'
+
+        forcefocus_cli.cmd_set_key(None)
+
+        mock_mkdir.assert_called_with(parents=True, exist_ok=True)
+        mock_open.assert_called_with(forcefocus_cli.KS_HASH_FILE, "w")
+        mock_json_dump.assert_called_once()
+        mock_chmod.assert_called_with(forcefocus_cli.KS_HASH_FILE, 0o600)
+        mock_print_data.assert_called_with({"status": "ok", "message": "Passphrase set successfully."}, title="Set Key")
+
+    @patch('forcefocus_cli.os.geteuid')
+    @patch('forcefocus_cli.getpass.getpass')
+    @patch('forcefocus_cli.sys.exit')
+    @patch('builtins.print')
+    def test_set_key_keyboard_interrupt(self, mock_print, mock_exit, mock_getpass, mock_geteuid):
+        """Test set-key handles KeyboardInterrupt gracefully."""
+        mock_geteuid.return_value = 0 # root user
+        mock_getpass.side_effect = KeyboardInterrupt()
+
+        forcefocus_cli.cmd_set_key(None)
+
+        mock_print.assert_called_with("\nAborted.")
+        mock_exit.assert_called_with(1)
+
+
 if __name__ == '__main__':
     unittest.main()
