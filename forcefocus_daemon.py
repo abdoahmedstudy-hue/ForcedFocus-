@@ -1709,6 +1709,7 @@ class ForcedFocusDaemon:
         if not VPN_PROCESSES:
             return
         try:
+            # Targeted killall for all processes at once to reduce subprocess overhead
             # Targeted killall
             subprocess.run(["killall", "-9"] + VPN_PROCESSES, capture_output=True, timeout=2)
         except Exception:
