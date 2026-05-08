@@ -1,3 +1,20 @@
-🎯 **What:** Created missing tests for `forcefocus_web.py` to bridge the gap in testing coverage.
-📊 **Coverage:** Now tests daemon socket communications (including error and retry cases), `ForcedFocusHandler` CORS logic `_is_origin_allowed` and `_get_cors_origin`, and endpoints for `/api/status`, `/api/start`, `/api/lists/blacklist/bulk`, and list DELETE.
-✨ **Result:** Improved robustness by asserting that web server gracefully routes REST commands effectively into correct inter-process socket messages. All tests pass locally.
+🌊 Flow: Reliability fix - AbortControllers and Button Disabling
+
+💡 What:
+- Implemented `AbortController` functionality inside the `api` utility across `app.js`, `menubar.js`, and `settings.js`.
+- Disabled UI mutation buttons (`btnStart`, `btnConfirmStop`, `addDomain`, `removeBtn`, `btnUnlockConfirm`, `saveSettings`, `saveGroup`, etc.) when their corresponding requests are pending.
+- Fixed a minor bug with `raw.split` missing an escape character when adding new domains.
+- Fixed a test asserting an older version of the chrome-extension UUID, updating it to the current UUID (`hcgpgflhkpdccdjkkobofpaemcgjmhdc`).
+
+🎯 Why:
+- Fast clicking would previously cause concurrent POST/DELETE duplicate requests, leading to ghost errors.
+- Polling for GET requests without `AbortController` over slow networks risked older requests overwriting new states and caused overlapping race conditions.
+
+🛡️ Resilience:
+- Single-flight concurrency is now strongly enforced.
+- Re-triggering API calls is explicitly blocked through UI `disabled=true` attributes while async calls to the backend resolve.
+- Active polling requests are aborted gracefully avoiding data clashing when refreshing component states.
+
+🧪 Testing:
+- Verified syntax dynamically using node format evaluators.
+- All 41 daemon Python tests passed, ensuring the mocked origin header reflects the correct extension namespace.
