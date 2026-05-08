@@ -1,20 +1,11 @@
-🌊 Flow: Reliability fix - AbortControllers and Button Disabling
+🧪 Add tests for forcefocus_cli.cmd_web
 
-💡 What:
-- Implemented `AbortController` functionality inside the `api` utility across `app.js`, `menubar.js`, and `settings.js`.
-- Disabled UI mutation buttons (`btnStart`, `btnConfirmStop`, `addDomain`, `removeBtn`, `btnUnlockConfirm`, `saveSettings`, `saveGroup`, etc.) when their corresponding requests are pending.
-- Fixed a minor bug with `raw.split` missing an escape character when adding new domains.
-- Fixed a test asserting an older version of the chrome-extension UUID, updating it to the current UUID (`hcgpgflhkpdccdjkkobofpaemcgjmhdc`).
+🎯 **What:** The `cmd_web` function in `forcefocus_cli.py` lacked unit tests.
 
-🎯 Why:
-- Fast clicking would previously cause concurrent POST/DELETE duplicate requests, leading to ghost errors.
-- Polling for GET requests without `AbortController` over slow networks risked older requests overwriting new states and caused overlapping race conditions.
+📊 **Coverage:** The new `TestForceFocusCLICmdWeb` class tests:
+* Starting the web interface when the primary script exists in `/usr/local/bin`
+* Starting the web interface when the primary script is missing, falling back to the directory containing the CLI script
+* Providing a helpful error message when the web script isn't found anywhere
+* Stopping the web interface and correctly handling the `stop` action
 
-🛡️ Resilience:
-- Single-flight concurrency is now strongly enforced.
-- Re-triggering API calls is explicitly blocked through UI `disabled=true` attributes while async calls to the backend resolve.
-- Active polling requests are aborted gracefully avoiding data clashing when refreshing component states.
-
-🧪 Testing:
-- Verified syntax dynamically using node format evaluators.
-- All 41 daemon Python tests passed, ensuring the mocked origin header reflects the correct extension namespace.
+✨ **Result:** Enhanced test coverage ensures that CLI commands to start/stop the web interface are thoroughly tested and verified.
