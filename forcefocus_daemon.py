@@ -31,6 +31,10 @@ def get_continuous_time() -> float:
     # CLOCK_MONOTONIC_RAW on macOS maps to mach_continuous_time (includes sleep time)
     return time.clock_gettime(time.CLOCK_MONOTONIC_RAW)
 
+# Constants for optimizations
+COMMON_PREFIXES = ("www.", "m.", "api.", "cdn.", "static.", "app.", "mail.", "login.", "accounts.",
+                   "mobile.", "touch.", "new.", "dev.", "assets.", "cdn1.", "cdn2.", "v.", "video.")
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # CONFIGURATION
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -894,8 +898,7 @@ class ForcedFocusDaemon:
 
             self.mode = mode
             self.session_type = cmd.get("session_type", "standard")
-            expiry = datetime.now() + timedelta(minutes=duration_minutes)
-            self.session_expiry = expiry
+            self.session_expiry = datetime.now() + timedelta(minutes=duration_minutes)
             self.active = True
             self.total_duration_seconds = duration_minutes * 60
             self.pending_unlock_at = None
@@ -1012,13 +1015,13 @@ class ForcedFocusDaemon:
                 else:
                     msg = f"Blacklist mode: {count} domains blocked for {duration_minutes} min."
 
-            logging.info("Session started (%s) — expires %s.", mode, expiry.strftime("%H:%M:%S"))
+            logging.info("Session started (%s) — expires %s.", mode, self.session_expiry.strftime("%H:%M:%S"))
             return {
                 "status": "ok",
                 "message": msg,
                 "mode": mode,
                 "domains_count": count,
-                "expires_at": expiry.strftime("%H:%M:%S"),
+                "expires_at": self.session_expiry.strftime("%H:%M:%S"),
             }
 
     def _request_stop(self, passphrase: str) -> dict:
@@ -1157,9 +1160,12 @@ class ForcedFocusDaemon:
                             expanded.add(prefix + asset)
 
                 # Expand with common subdomain prefixes for broader /etc/hosts coverage
-                for prefix in ["www.", "m.", "api.", "cdn.", "static.", "app.", "mail.", "login.", "accounts.", 
-                               "mobile.", "touch.", "new.", "dev.", "assets.", "cdn1.", "cdn2.", "v.", "video."]:
-                    if not domain.startswith(prefix):
+                if domain.startswith(COMMON_PREFIXES):
+                    for prefix in COMMON_PREFIXES:
+                        if not domain.startswith(prefix):
+                            expanded.add(prefix + domain)
+                else:
+                    for prefix in COMMON_PREFIXES:
                         expanded.add(prefix + domain)
             return sorted(expanded)
         # Fallback to hard-coded default
@@ -1173,8 +1179,7 @@ class ForcedFocusDaemon:
         expanded = set()
         
         # Layer 1: Always allow common CDN/infrastructure domains
-        for cdn in CDN_INFRASTRUCTURE_DOMAINS:
-            expanded.add(cdn)
+        expanded.update(CDN_INFRASTRUCTURE_DOMAINS)
             
         # Add user domains and Layer 2 bundles
         for d in domains:
