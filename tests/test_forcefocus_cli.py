@@ -6,13 +6,26 @@ from unittest.mock import patch, MagicMock
 # Create a more robust mock package for 'rich'
 import types
 
-rich_mock = types.ModuleType('rich')
-sys.modules['rich'] = rich_mock
+rich_mock = types.ModuleType("rich")
+sys.modules["rich"] = rich_mock
 
-for sub_module in ['console', 'panel', 'table', 'text', 'box', 'prompt', 'layout', 'live', 'spinner', 'progress', 'theme']:
-    sys.modules[f'rich.{sub_module}'] = MagicMock()
+for sub_module in [
+    "console",
+    "panel",
+    "table",
+    "text",
+    "box",
+    "prompt",
+    "layout",
+    "live",
+    "spinner",
+    "progress",
+    "theme",
+]:
+    sys.modules[f"rich.{sub_module}"] = MagicMock()
 
 import forcefocus_cli
+
 
 class TestForceFocusCLIParser(unittest.TestCase):
     def setUp(self):
@@ -36,7 +49,9 @@ class TestForceFocusCLIParser(unittest.TestCase):
 
     def test_start_subcommand(self):
         """Test 'start' subcommand arguments."""
-        args = self.parser.parse_args(["start", "--duration", "60", "--mode", "whitelist"])
+        args = self.parser.parse_args(
+            ["start", "--duration", "60", "--mode", "whitelist"]
+        )
         self.assertEqual(args.command, "start")
         self.assertEqual(args.duration, 60)
         self.assertEqual(args.mode, "whitelist")
@@ -80,7 +95,9 @@ class TestForceFocusCLIParser(unittest.TestCase):
 
     def test_groups_subcommand(self):
         """Test 'groups' subcommand arguments."""
-        args = self.parser.parse_args(["groups", "add", "mygroup", "domain.com", "domain.org"])
+        args = self.parser.parse_args(
+            ["groups", "add", "mygroup", "domain.com", "domain.org"]
+        )
         self.assertEqual(args.command, "groups")
         self.assertEqual(args.action, "add")
         self.assertEqual(args.name, "mygroup")
@@ -89,25 +106,31 @@ class TestForceFocusCLIParser(unittest.TestCase):
 
 
 class TestForceFocusCLISetKey(unittest.TestCase):
-    @patch('forcefocus_cli.os.geteuid')
-    @patch('forcefocus_cli.sys.exit')
-    @patch('forcefocus_cli.out.print_error')
+    @patch("forcefocus_cli.os.geteuid")
+    @patch("forcefocus_cli.sys.exit")
+    @patch("forcefocus_cli.out.print_error")
     def test_set_key_non_root(self, mock_print_error, mock_exit, mock_geteuid):
         """Test set-key command when not run as root."""
-        mock_geteuid.return_value = 1000 # non-root user
+        mock_geteuid.return_value = 1000  # non-root user
         mock_print_error.side_effect = SystemExit(1)
         with self.assertRaises(SystemExit):
             forcefocus_cli.cmd_set_key(None)
 
         # Verify it errors out correctly
-        mock_print_error.assert_called_with("Must run as root to set the kill-switch passphrase.", code="PERM_DENIED", suggestion="Use: sudo forcefocus set-key")
+        mock_print_error.assert_called_with(
+            "Must run as root to set the kill-switch passphrase.",
+            code="PERM_DENIED",
+            suggestion="Use: sudo forcefocus set-key",
+        )
 
-    @patch('forcefocus_cli.os.geteuid')
-    @patch('forcefocus_cli.getpass.getpass')
-    @patch('forcefocus_cli.out.print_error')
-    def test_set_key_empty_passphrase(self, mock_print_error, mock_getpass, mock_geteuid):
+    @patch("forcefocus_cli.os.geteuid")
+    @patch("forcefocus_cli.getpass.getpass")
+    @patch("forcefocus_cli.out.print_error")
+    def test_set_key_empty_passphrase(
+        self, mock_print_error, mock_getpass, mock_geteuid
+    ):
         """Test set-key command when an empty passphrase is provided."""
-        mock_geteuid.return_value = 0 # root user
+        mock_geteuid.return_value = 0  # root user
 
         # Empty string on first prompt
         mock_getpass.side_effect = ["", ""]
@@ -115,14 +138,18 @@ class TestForceFocusCLISetKey(unittest.TestCase):
         with self.assertRaises(SystemExit):
             forcefocus_cli.cmd_set_key(None)
 
-        mock_print_error.assert_called_with("Passphrase cannot be empty.", code="INVALID_INPUT")
+        mock_print_error.assert_called_with(
+            "Passphrase cannot be empty.", code="INVALID_INPUT"
+        )
 
-    @patch('forcefocus_cli.os.geteuid')
-    @patch('forcefocus_cli.getpass.getpass')
-    @patch('forcefocus_cli.out.print_error')
-    def test_set_key_mismatched_passphrases(self, mock_print_error, mock_getpass, mock_geteuid):
+    @patch("forcefocus_cli.os.geteuid")
+    @patch("forcefocus_cli.getpass.getpass")
+    @patch("forcefocus_cli.out.print_error")
+    def test_set_key_mismatched_passphrases(
+        self, mock_print_error, mock_getpass, mock_geteuid
+    ):
         """Test set-key command when passphrases do not match."""
-        mock_geteuid.return_value = 0 # root user
+        mock_geteuid.return_value = 0  # root user
 
         # Different strings
         mock_getpass.side_effect = ["password123", "different123"]
@@ -130,21 +157,33 @@ class TestForceFocusCLISetKey(unittest.TestCase):
         with self.assertRaises(SystemExit):
             forcefocus_cli.cmd_set_key(None)
 
-        mock_print_error.assert_called_with("Passphrases do not match.", code="MISMATCH")
+        mock_print_error.assert_called_with(
+            "Passphrases do not match.", code="MISMATCH"
+        )
 
-    @patch('forcefocus_cli.os.geteuid')
-    @patch('forcefocus_cli.getpass.getpass')
-    @patch('forcefocus_cli.os.urandom')
-    @patch('forcefocus_cli.json.dump')
-    @patch('forcefocus_cli.os.chmod')
-    @patch('builtins.open', new_callable=unittest.mock.mock_open)
-    @patch('forcefocus_cli.out.print_data')
-    @patch('pathlib.Path.mkdir')
-    def test_set_key_success(self, mock_mkdir, mock_print_data, mock_open, mock_chmod, mock_json_dump, mock_urandom, mock_getpass, mock_geteuid):
+    @patch("forcefocus_cli.os.geteuid")
+    @patch("forcefocus_cli.getpass.getpass")
+    @patch("forcefocus_cli.os.urandom")
+    @patch("forcefocus_cli.json.dump")
+    @patch("forcefocus_cli.os.chmod")
+    @patch("builtins.open", new_callable=unittest.mock.mock_open)
+    @patch("forcefocus_cli.out.print_data")
+    @patch("pathlib.Path.mkdir")
+    def test_set_key_success(
+        self,
+        mock_mkdir,
+        mock_print_data,
+        mock_open,
+        mock_chmod,
+        mock_json_dump,
+        mock_urandom,
+        mock_getpass,
+        mock_geteuid,
+    ):
         """Test successful set-key command execution."""
-        mock_geteuid.return_value = 0 # root user
+        mock_geteuid.return_value = 0  # root user
         mock_getpass.side_effect = ["mypassword", "mypassword"]
-        mock_urandom.return_value = b'1234567890abcdef'
+        mock_urandom.return_value = b"1234567890abcdef"
 
         forcefocus_cli.cmd_set_key(None)
 
@@ -152,21 +191,26 @@ class TestForceFocusCLISetKey(unittest.TestCase):
         mock_open.assert_called_with(forcefocus_cli.KS_HASH_FILE, "w")
         mock_json_dump.assert_called_once()
         mock_chmod.assert_called_with(forcefocus_cli.KS_HASH_FILE, 0o600)
-        mock_print_data.assert_called_with({"status": "ok", "message": "Passphrase set successfully."}, title="Set Key")
+        mock_print_data.assert_called_with(
+            {"status": "ok", "message": "Passphrase set successfully."}, title="Set Key"
+        )
 
-    @patch('forcefocus_cli.os.geteuid')
-    @patch('forcefocus_cli.getpass.getpass')
-    @patch('forcefocus_cli.sys.exit')
-    @patch('builtins.print')
-    def test_set_key_keyboard_interrupt(self, mock_print, mock_exit, mock_getpass, mock_geteuid):
+    @patch("forcefocus_cli.os.geteuid")
+    @patch("forcefocus_cli.getpass.getpass")
+    @patch("forcefocus_cli.sys.exit")
+    @patch("builtins.print")
+    def test_set_key_keyboard_interrupt(
+        self, mock_print, mock_exit, mock_getpass, mock_geteuid
+    ):
         """Test set-key handles KeyboardInterrupt gracefully."""
-        mock_geteuid.return_value = 0 # root user
+        mock_geteuid.return_value = 0  # root user
         mock_getpass.side_effect = KeyboardInterrupt()
 
         forcefocus_cli.cmd_set_key(None)
 
         mock_print.assert_called_with("\nAborted.")
         mock_exit.assert_called_with(1)
+
 
 class TestCmdStart(unittest.TestCase):
     def setUp(self):
@@ -181,10 +225,10 @@ class TestCmdStart(unittest.TestCase):
         self.args.schedule_at = None
         self.args.groups = None
 
-        self.patch_send = patch('forcefocus_cli.send_command')
-        self.patch_error = patch('forcefocus_cli.out.print_error')
-        self.patch_data = patch('forcefocus_cli.out.print_data')
-        self.patch_status = patch('forcefocus_cli.console.status')
+        self.patch_send = patch("forcefocus_cli.send_command")
+        self.patch_error = patch("forcefocus_cli.out.print_error")
+        self.patch_data = patch("forcefocus_cli.out.print_data")
+        self.patch_status = patch("forcefocus_cli.console.status")
 
         self.mock_send = self.patch_send.start()
         self.mock_error = self.patch_error.start()
@@ -214,11 +258,13 @@ class TestCmdStart(unittest.TestCase):
             "session_type": "standard",
             "focus_minutes": 25,
             "break_minutes": 5,
-            "cycles": 4
+            "cycles": 4,
         }
 
         self.mock_send.assert_called_once_with(expected_payload)
-        self.mock_data.assert_called_once_with({"status": "ok", "message": "Started"}, title="Start Session")
+        self.mock_data.assert_called_once_with(
+            {"status": "ok", "message": "Started"}, title="Start Session"
+        )
 
     def test_pomodoro_session(self):
         self.args.session_type = "pomodoro"
@@ -227,12 +273,12 @@ class TestCmdStart(unittest.TestCase):
 
         expected_payload = {
             "action": "start",
-            "duration_minutes": (25 + 5) * 4, # 120
+            "duration_minutes": (25 + 5) * 4,  # 120
             "mode": "blacklist",
             "session_type": "pomodoro",
             "focus_minutes": 25,
             "break_minutes": 5,
-            "cycles": 4
+            "cycles": 4,
         }
 
         self.mock_send.assert_called_once_with(expected_payload)
@@ -242,7 +288,9 @@ class TestCmdStart(unittest.TestCase):
 
         forcefocus_cli.cmd_start(self.args)
 
-        self.mock_error.assert_called_once_with("Duration must be a positive number of minutes.", code="INVALID_DURATION")
+        self.mock_error.assert_called_once_with(
+            "Duration must be a positive number of minutes.", code="INVALID_DURATION"
+        )
 
     def test_schedule_in(self):
         self.args.schedule_in = 30
@@ -282,13 +330,15 @@ class TestCmdStart(unittest.TestCase):
         self.mock_status.assert_called_once()
         self.mock_send.assert_called_once()
 
+
 import socket
 import json
 import os
 
+
 class TestSendCommand(unittest.TestCase):
-    @patch('forcefocus_cli.os.path.exists')
-    @patch('forcefocus_cli.out.print_error')
+    @patch("forcefocus_cli.os.path.exists")
+    @patch("forcefocus_cli.out.print_error")
     def test_daemon_not_found(self, mock_print_error, mock_exists):
         mock_exists.return_value = False
         mock_print_error.side_effect = SystemExit(1)
@@ -300,9 +350,9 @@ class TestSendCommand(unittest.TestCase):
         args, kwargs = mock_print_error.call_args
         self.assertEqual(kwargs.get("code"), "DAEMON_NOT_FOUND")
 
-    @patch('forcefocus_cli.os.path.exists')
-    @patch('forcefocus_cli.socket.socket')
-    @patch('forcefocus_cli.out.print_error')
+    @patch("forcefocus_cli.os.path.exists")
+    @patch("forcefocus_cli.socket.socket")
+    @patch("forcefocus_cli.out.print_error")
     def test_connection_refused(self, mock_print_error, mock_socket, mock_exists):
         mock_exists.return_value = True
         mock_sock_inst = MagicMock()
@@ -317,9 +367,9 @@ class TestSendCommand(unittest.TestCase):
         args, kwargs = mock_print_error.call_args
         self.assertEqual(kwargs.get("code"), "CONNECTION_REFUSED")
 
-    @patch('forcefocus_cli.os.path.exists')
-    @patch('forcefocus_cli.socket.socket')
-    @patch('forcefocus_cli.out.print_error')
+    @patch("forcefocus_cli.os.path.exists")
+    @patch("forcefocus_cli.socket.socket")
+    @patch("forcefocus_cli.out.print_error")
     def test_timeout(self, mock_print_error, mock_socket, mock_exists):
         mock_exists.return_value = True
         mock_sock_inst = MagicMock()
@@ -334,9 +384,9 @@ class TestSendCommand(unittest.TestCase):
         args, kwargs = mock_print_error.call_args
         self.assertEqual(kwargs.get("code"), "TIMEOUT")
 
-    @patch('forcefocus_cli.os.path.exists')
-    @patch('forcefocus_cli.socket.socket')
-    @patch('forcefocus_cli.out.print_error')
+    @patch("forcefocus_cli.os.path.exists")
+    @patch("forcefocus_cli.socket.socket")
+    @patch("forcefocus_cli.out.print_error")
     def test_socket_error(self, mock_print_error, mock_socket, mock_exists):
         mock_exists.return_value = True
         mock_sock_inst = MagicMock()
@@ -351,9 +401,9 @@ class TestSendCommand(unittest.TestCase):
         args, kwargs = mock_print_error.call_args
         self.assertEqual(kwargs.get("code"), "SOCKET_ERROR")
 
-    @patch('forcefocus_cli.os.path.exists')
-    @patch('forcefocus_cli.socket.socket')
-    @patch('forcefocus_cli.out.print_error')
+    @patch("forcefocus_cli.os.path.exists")
+    @patch("forcefocus_cli.socket.socket")
+    @patch("forcefocus_cli.out.print_error")
     def test_empty_response(self, mock_print_error, mock_socket, mock_exists):
         mock_exists.return_value = True
         mock_sock_inst = MagicMock()
@@ -369,29 +419,35 @@ class TestSendCommand(unittest.TestCase):
         args, kwargs = mock_print_error.call_args
         self.assertEqual(kwargs.get("code"), "EMPTY_RESPONSE")
 
-    @patch('forcefocus_cli.os.path.exists')
-    @patch('forcefocus_cli.socket.socket')
+    @patch("forcefocus_cli.os.path.exists")
+    @patch("forcefocus_cli.socket.socket")
     def test_success(self, mock_socket, mock_exists):
         mock_exists.return_value = True
         mock_sock_inst = MagicMock()
         mock_socket.return_value = mock_sock_inst
 
         response_data = {"status": "ok", "message": "success"}
-        mock_sock_inst.recv.side_effect = [json.dumps(response_data).encode("utf-8"), b""]
+        mock_sock_inst.recv.side_effect = [
+            json.dumps(response_data).encode("utf-8"),
+            b"",
+        ]
 
         result = forcefocus_cli.send_command({"cmd": "status"})
 
         self.assertEqual(result, response_data)
         mock_sock_inst.connect.assert_called_once_with(forcefocus_cli.SOCK_PATH)
-        mock_sock_inst.sendall.assert_called_once_with(json.dumps({"cmd": "status"}).encode("utf-8"))
+        mock_sock_inst.sendall.assert_called_once_with(
+            json.dumps({"cmd": "status"}).encode("utf-8")
+        )
+
 
 class TestForceFocusCLICmdWeb(unittest.TestCase):
     def setUp(self):
         self.args = MagicMock()
 
-    @patch('forcefocus_cli.out')
-    @patch('forcefocus_cli.Path')
-    @patch('forcefocus_cli.subprocess.run')
+    @patch("forcefocus_cli.out")
+    @patch("forcefocus_cli.Path")
+    @patch("forcefocus_cli.subprocess.run")
     def test_cmd_web_start_default_path(self, mock_run, mock_path_class, mock_out):
         self.args.action = "start"
 
@@ -401,13 +457,15 @@ class TestForceFocusCLICmdWeb(unittest.TestCase):
 
         forcefocus_cli.cmd_web(self.args)
 
-        mock_out.print_data.assert_called_once_with({"status": "ok", "message": "Starting web interface..."}, title="Web UI")
+        mock_out.print_data.assert_called_once_with(
+            {"status": "ok", "message": "Starting web interface..."}, title="Web UI"
+        )
         mock_run.assert_called_once_with([sys.executable, str(mock_path_instance)])
         mock_out.print_error.assert_not_called()
 
-    @patch('forcefocus_cli.out')
-    @patch('forcefocus_cli.Path')
-    @patch('forcefocus_cli.subprocess.run')
+    @patch("forcefocus_cli.out")
+    @patch("forcefocus_cli.Path")
+    @patch("forcefocus_cli.subprocess.run")
     def test_cmd_web_start_fallback_path(self, mock_run, mock_path_class, mock_out):
         self.args.action = "start"
 
@@ -432,13 +490,15 @@ class TestForceFocusCLICmdWeb(unittest.TestCase):
 
         forcefocus_cli.cmd_web(self.args)
 
-        mock_out.print_data.assert_called_once_with({"status": "ok", "message": "Starting web interface..."}, title="Web UI")
+        mock_out.print_data.assert_called_once_with(
+            {"status": "ok", "message": "Starting web interface..."}, title="Web UI"
+        )
         mock_run.assert_called_once_with([sys.executable, str(mock_fallback_path)])
         mock_out.print_error.assert_not_called()
 
-    @patch('forcefocus_cli.out')
-    @patch('forcefocus_cli.Path')
-    @patch('forcefocus_cli.subprocess.run')
+    @patch("forcefocus_cli.out")
+    @patch("forcefocus_cli.Path")
+    @patch("forcefocus_cli.subprocess.run")
     def test_cmd_web_start_not_found(self, mock_run, mock_path_class, mock_out):
         self.args.action = "start"
 
@@ -463,21 +523,27 @@ class TestForceFocusCLICmdWeb(unittest.TestCase):
 
         forcefocus_cli.cmd_web(self.args)
 
-        mock_out.print_data.assert_called_once_with({"status": "ok", "message": "Starting web interface..."}, title="Web UI")
+        mock_out.print_data.assert_called_once_with(
+            {"status": "ok", "message": "Starting web interface..."}, title="Web UI"
+        )
         mock_run.assert_not_called()
-        mock_out.print_error.assert_called_once_with("Web server script not found.", code="FILE_NOT_FOUND")
+        mock_out.print_error.assert_called_once_with(
+            "Web server script not found.", code="FILE_NOT_FOUND"
+        )
 
-    @patch('forcefocus_cli.out')
-    @patch('forcefocus_cli.subprocess.run')
+    @patch("forcefocus_cli.out")
+    @patch("forcefocus_cli.subprocess.run")
     def test_cmd_web_stop(self, mock_run, mock_out):
         self.args.action = "stop"
 
         forcefocus_cli.cmd_web(self.args)
 
-        mock_out.print_data.assert_called_once_with({"status": "ok", "message": "Stopping web interface..."}, title="Web UI")
+        mock_out.print_data.assert_called_once_with(
+            {"status": "ok", "message": "Stopping web interface..."}, title="Web UI"
+        )
         mock_run.assert_not_called()
         mock_out.print_error.assert_not_called()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
