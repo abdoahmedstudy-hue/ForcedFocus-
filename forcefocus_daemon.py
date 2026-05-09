@@ -1428,6 +1428,7 @@ class ForcedFocusDaemon:
                 ),
                 "session_type": self.session_type,
                 "schedules": schedules_res,
+                "intent": self.intent,
             }
             if self.session_type == "pomodoro":
                 result["pomo_phase"] = self.pomo_phase

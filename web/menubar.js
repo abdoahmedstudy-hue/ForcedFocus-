@@ -41,8 +41,6 @@ const els = {
   infoNext: $("#mbInfoNext"),
   infoNextTime: $("#mbInfoNextTime"),
   nextRow: $("#mbNextRow"),
-  intentRow: $("#mbIntentRow"),
-  infoIntent: $("#mbInfoIntent"),
 
   btnStart: $("#mbBtnStart"),
   btnStop: $("#mbBtnStop"),
@@ -238,11 +236,16 @@ function renderStatus(data) {
       $(".timer-ring").classList.remove("break");
     }
     
-    if (data.intent) {
-      els.intentRow.classList.remove("hidden");
-      els.infoIntent.textContent = data.intent;
-    } else {
-      els.intentRow.classList.add("hidden");
+    const intentContainer = document.getElementById("activeIntentContainer");
+    const intentDisplay = document.getElementById("activeIntentDisplay");
+    
+    if (intentContainer && intentDisplay) {
+      if (data.intent) {
+        intentContainer.classList.remove("hidden");
+        intentDisplay.textContent = data.intent;
+      } else {
+        intentContainer.classList.add("hidden");
+      }
     }
   } else {
     // We are idle

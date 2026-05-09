@@ -397,7 +397,6 @@ function setActiveUI(status) {
         intentContainer.style.display = "block";
         if (intentDisplay) {
           intentDisplay.textContent = status.intent;
-          intentDisplay.style.display = "block";
         }
       } else {
         intentContainer.style.display = "none";
@@ -460,6 +459,9 @@ function setActiveUI(status) {
     els.expiresDisplay.textContent = `Starts at: ${nextSch.starts_at}`;
     els.pomoStatus.classList.add("hidden");
     els.unlockInfo.classList.add("hidden");
+    
+    const intentContainer = document.getElementById("activeIntentContainer");
+    if (intentContainer) intentContainer.style.display = "none";
 
     if (secs <= 0) {
       els.timerLabel.textContent = "STARTING...";
@@ -480,6 +482,9 @@ function setActiveUI(status) {
     els.timerRing.classList.remove("break");
     els.timerLabel.textContent = "READY";
     els.unlockInfo.classList.add("hidden");
+
+    const intentContainer = document.getElementById("activeIntentContainer");
+    if (intentContainer) intentContainer.style.display = "none";
 
     totalSessionSeconds = 0;
     stopCountdown();

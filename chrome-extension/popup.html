@@ -152,28 +152,21 @@
     <!-- Active Controls -->
     <div class="controls hidden" id="activeControls">
       <div id="activeIntentContainer" style="
+            display: none;
             margin-bottom: 12px;
-            padding: 10px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: var(--r);
+            padding: 12px;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            border-radius: 21px;
             text-align: center;
-            border-left: 3px solid #6366f1;
           ">
         <div style="
-              font-size: 11px;
+              font-size: 13px;
               color: var(--text2);
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-              margin-bottom: 6px;
-            ">
-          🎯 Focus Intent
-        </div>
-        <div id="activeIntentDisplay" style="
-              display: none;
-              font-size: 14px;
               font-weight: 500;
-              color: var(--text);
-            "></div>
+            ">
+          🎯 Session goal is: '<span id="activeIntentDisplay" style="font-weight: 700; color: var(--text);"></span>'
+        </div>
       </div>
       <div class="info-row">
         <span class="info-label">Mode</span>

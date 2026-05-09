@@ -246,7 +246,6 @@ function renderStatus(data) {
         intentContainer.style.display = "block";
         if (intentDisplay) {
           intentDisplay.textContent = data.intent;
-          intentDisplay.style.display = "block";
         }
       } else {
         intentContainer.style.display = "none";

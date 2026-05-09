@@ -1,3 +1,0 @@
-## 2026-05-09 - Accessible Form Controls
-**Learning:** Found a systemic pattern across both the Web UI and Chrome Extension where custom configuration inputs (like pomodoro cycles, schedules, and active intents) rely exclusively on placeholders or text labels that lack `for` attribute linkages.
-**Action:** When adding any new form controls to the settings/dashboard, ensure explicit label associations are created either via `for="..."` linking to an ID, `.sr-only` visually hidden labels, or direct `aria-label` attributes on the input to ensure screen reader compatibility without sacrificing the minimalistic design.
