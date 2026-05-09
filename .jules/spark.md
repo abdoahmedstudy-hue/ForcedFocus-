@@ -1,1 +1,0 @@
-## 2024-05-08 - Intent Setting Feature\n**Learning:** Implementing 'Intent Setting' provides a powerful psychological redirect by showing the user their own stated goal when they hit a blocked page.\n**Action:** Add an optional 'intent' field to session start payload, persist it in the daemon state, and display it prominently on blocked.html and active dashboards.
