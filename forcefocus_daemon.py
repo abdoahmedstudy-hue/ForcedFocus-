@@ -140,7 +140,7 @@ CDN_INFRASTRUCTURE_DOMAINS = [
     "akamaized.net", "akamai.net", "akamaihd.net", "fastly.net", "fastlylb.net",
     "edgecastcdn.net", "stackpathdns.com", "azureedge.net", "azurefd.net",
     # Google shared infrastructure
-    "gstatic.com", "googleapis.com", "googleusercontent.com", "google.com",
+    "gstatic.com", "googleapis.com", "googleusercontent.com",
     # Fonts & typography
     "fonts.googleapis.com", "fonts.gstatic.com", "use.typekit.net", "use.fontawesome.com",
     # JS/CSS package CDNs
