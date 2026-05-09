@@ -84,7 +84,7 @@ body::after {
 .dashboard-layout {
     display: grid;
     grid-template-columns: 350px 1fr;
-    gap: 32px;
+    gap: 50px;
     align-items: start;
 }
 
@@ -103,26 +103,19 @@ body::after {
 }
 
 .controls-section {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 20px;
-    align-items: start;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
 }
 
 .controls-section>.card,
 .controls-section>.action-buttons,
 .controls-section>.unlock-info {
-    margin-bottom: 0;
-    height: 100%;
+    width: 100%;
 }
 
 .controls-section>.action-buttons {
-    grid-column: 1 / -1;
-    margin-top: 10px;
-}
-
-.controls-section>.unlock-info {
-    grid-column: 1 / -1;
+    margin-top: 8px;
 }
 
 @media (max-width: 950px) {
@@ -219,6 +212,76 @@ body::after {
 
     50% {
         opacity: 0.4;
+    }
+}
+
+/* ── Navigation ──────────────────────────────────────────────────────────── */
+
+.main-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 24px;
+}
+
+.nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    text-align: left;
+}
+
+.nav-btn:hover {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-primary);
+}
+
+.nav-btn.active {
+    background: rgba(99, 102, 241, 0.1);
+    border-color: var(--border-active);
+    color: var(--text-primary);
+    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.15);
+}
+
+.nav-icon {
+    font-size: 18px;
+    opacity: 0.8;
+}
+
+.nav-btn.active .nav-icon {
+    opacity: 1;
+}
+
+/* ── Tab Panes ───────────────────────────────────────────────────────────── */
+
+.tab-pane {
+    display: none;
+    animation: slideUpFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.tab-pane.active {
+    display: block;
+}
+
+@keyframes slideUpFade {
+    from {
+        opacity: 0;
+        transform: translateY(15px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
     }
 }
 
@@ -370,12 +433,12 @@ body::after {
 
 .card {
     background: var(--bg-card);
-    backdrop-filter: var(--glass);
+    backdrop-filter: blur(40px) saturate(150%);
+    -webkit-backdrop-filter: blur(40px) saturate(150%);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 24px;
-    margin-bottom: 20px;
-    box-shadow: var(--shadow);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -383,7 +446,7 @@ body::after {
     background: var(--bg-card-hover);
     border-color: rgba(255, 255, 255, 0.15);
     transform: translateY(-4px);
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.1);
+    box-shadow: 0 16px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(99, 102, 241, 0.15);
 }
 
 .card-title {
@@ -724,12 +787,27 @@ body::after {
     transform: translateY(1px);
 }
 
+@keyframes splashPulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7), 0 4px 20px rgba(99, 102, 241, 0.3);
+    }
+
+    70% {
+        box-shadow: 0 0 0 15px rgba(99, 102, 241, 0), 0 4px 20px rgba(99, 102, 241, 0.3);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(99, 102, 241, 0), 0 4px 20px rgba(99, 102, 241, 0.3);
+    }
+}
+
 .btn-start {
     background: var(--accent-gradient);
     color: white;
     box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
     position: relative;
     overflow: hidden;
+    animation: splashPulse 2s infinite;
 }
 
 .btn-start::after {
@@ -739,7 +817,7 @@ body::after {
     left: -100%;
     width: 50%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
     transform: skewX(-20deg);
     transition: 0.5s;
 }
@@ -750,7 +828,9 @@ body::after {
 
 .btn-start:hover {
     transform: translateY(-3px) scale(1.02);
-    box-shadow: 0 12px 30px rgba(99, 102, 241, 0.5), 0 0 15px rgba(139, 92, 246, 0.4);
+    box-shadow: 0 12px 30px rgba(99, 102, 241, 0.5), 0 0 25px rgba(139, 92, 246, 0.6);
+    animation: none;
+    /* Stop pulsing on hover so glow takes over */
 }
 
 .btn-start:active {

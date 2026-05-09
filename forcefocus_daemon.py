@@ -357,7 +357,19 @@ class ForcedFocusDaemon:
             return {"blacklist": [], "whitelist": []}
 
     def _save_lists(self, lists: dict):
-        LISTS_FILE.write_text(json.dumps(lists, indent=2))
+        self._atomic_write_json(LISTS_FILE, lists, indent=2)
+
+    @staticmethod
+    def _atomic_write_json(path: Path, data: dict, indent=None):
+        temp_path = path.with_suffix('.tmp')
+        try:
+            temp_path.write_text(json.dumps(data, indent=indent))
+            os.replace(temp_path, path)
+        except Exception as exc:
+            logging.error("Atomic write failed for %s: %s", path, exc)
+            if temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+            raise
 
     def _cmd_get_lists(self) -> dict:
         lists = self._load_lists()
@@ -1154,8 +1166,13 @@ class ForcedFocusDaemon:
         except Exception as exc:
             logging.error("cleanup_session error: %s", exc)
 
-        SESSION_LOCK.unlink(missing_ok=True)
         self.active = False
+
+        if getattr(self, "schedules", []):
+            self._persist_session_lock()
+        else:
+            SESSION_LOCK.unlink(missing_ok=True)
+
         self.hosts_hash = None
         self.session_expiry = None
         self.pending_unlock_at = None
@@ -1321,7 +1338,7 @@ class ForcedFocusDaemon:
                 data["blocked_domains"] = self.blocked_domains
                 
         try:
-            SESSION_LOCK.write_text(json.dumps(data))
+            self._atomic_write_json(SESSION_LOCK, data)
             logging.info("session.lock re-created from memory.")
         except Exception as exc:
             logging.error("Failed to persist session.lock: %s", exc)
@@ -1343,7 +1360,7 @@ class ForcedFocusDaemon:
         """Save settings to JSON."""
         try:
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-            SETTINGS_FILE.write_text(json.dumps(new_settings, indent=2))
+            self._atomic_write_json(SETTINGS_FILE, new_settings, indent=2)
             self.settings = new_settings
             return True
         except Exception as exc:

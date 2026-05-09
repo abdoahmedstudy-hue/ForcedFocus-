@@ -373,7 +373,22 @@ function renderDomainList(container, domains, listName) {
 // ── Event Handlers ───────────────────────────────────────────────────────────
 
 function initEvents() {
-    // Mode toggle
+    // Tab Navigation
+    $$('.nav-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Remove active from all tabs and panes
+            $$('.nav-btn').forEach(b => b.classList.remove('active'));
+            $$('.tab-pane').forEach(p => p.classList.remove('active'));
+            
+            // Add active to clicked tab and corresponding pane
+            btn.classList.add('active');
+            const targetId = btn.dataset.tab;
+            const targetPane = document.getElementById(targetId);
+            if (targetPane) targetPane.classList.add('active');
+        });
+    });
+
+    // Mode toggle (excluding nav tabs)
     $$('.mode-btn:not(.session-type-btn):not(.schedule-type-btn)').forEach(btn => {
         btn.addEventListener('click', () => {
             $$('.mode-btn:not(.session-type-btn):not(.schedule-type-btn)').forEach(b => b.classList.remove('active'));
