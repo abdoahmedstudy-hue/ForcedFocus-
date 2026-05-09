@@ -24,9 +24,16 @@ let apiToken = ''; // Per-launch API token for mutation auth
 // ── HTML Sanitization ────────────────────────────────────────────────────────
 
 // P6: Static character map instead of throwaway DOM elements
+const HTML_ESCAPE_MAP = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+};
+
 function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, c =>
-        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#039;"}[c]));
+    return String(str).replace(/[&<>"']/g, c => HTML_ESCAPE_MAP[c]);
 }
 
 // Audio Manager
