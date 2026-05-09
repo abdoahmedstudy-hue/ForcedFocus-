@@ -1,7 +1,8 @@
 /**
  * ForcedFocus Content Script
- * Injects into web pages to provide additional functionality and 
+ * Injects into web pages to provide additional functionality and
  * integration with the ForcedFocus ecosystem.
+ * R7: Guarded against extension context invalidation.
  */
 
 // Only run on pages that are being blocked by ForcedFocus
@@ -25,7 +26,7 @@ if (blockedDomain) {
       justify-content: center;
       text-align: center;
     }
-    
+
     .forcedfocus-container {
       max-width: 600px;
       padding: 2rem;
@@ -33,25 +34,25 @@ if (blockedDomain) {
       border-radius: 12px;
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
     }
-    
+
     .forcedfocus-icon {
       font-size: 4rem;
       margin-bottom: 1rem;
     }
-    
+
     .forcedfocus-title {
       font-size: 2rem;
       font-weight: 700;
       margin: 0 0 1rem 0;
       color: #f87171;
     }
-    
+
     .forcedfocus-message {
       font-size: 1.1rem;
       line-height: 1.6;
       margin-bottom: 1.5rem;
     }
-    
+
     .forcedfocus-domain {
       background: rgba(239, 68, 68, 0.1);
       color: #f87171;
@@ -60,20 +61,20 @@ if (blockedDomain) {
       font-family: monospace;
       font-size: 1rem;
     }
-    
+
     .forcedfocus-timer {
       font-size: 1.5rem;
       font-weight: 600;
       color: #60a5fa;
       margin: 1rem 0;
     }
-    
+
     .forcedfocus-footer {
       font-size: 0.9rem;
       color: #94a3b8;
       margin-top: 2rem;
     }
-    
+
     .forcedfocus-button {
       background: #3b82f6;
       color: white;
@@ -86,59 +87,111 @@ if (blockedDomain) {
       text-decoration: none;
       display: inline-block;
     }
-    
+
     .forcedfocus-button:hover {
       background: #2563eb;
     }
   `;
   document.head.appendChild(style);
-  
-  // Update the blocked page content
+
+  // R2: Build blocked page with safe DOM construction — NO innerHTML with user data
   document.body.className = 'forcedfocus-blocked';
-  document.body.innerHTML = `
-    <div class="forcedfocus-container">
-      <div class="forcedfocus-icon">🚫</div>
-      <h1 class="forcedfocus-title">Website Blocked</h1>
-      <p class="forcedfocus-message">
-        Access to <span class="forcedfocus-domain">${blockedDomain}</span> has been blocked by ForcedFocus.
-      </p>
-      <div class="forcedfocus-timer" id="timer">Session ends in: calculating...</div>
-      <p class="forcedfocus-footer">
-        Use your focused time productively. Consider working on important tasks.
-      </p>
-      <a href="#" class="forcedfocus-button" id="closeTab">Close This Tab</a>
-    </div>
-  `;
-  
+  document.body.textContent = ''; // Clear safely
+
+  const container = document.createElement('div');
+  container.className = 'forcedfocus-container';
+
+  const icon = document.createElement('div');
+  icon.className = 'forcedfocus-icon';
+  icon.textContent = '🚫';
+
+  const title = document.createElement('h1');
+  title.className = 'forcedfocus-title';
+  title.textContent = 'Website Blocked';
+
+  const message = document.createElement('p');
+  message.className = 'forcedfocus-message';
+  message.appendChild(document.createTextNode('Access to '));
+  const domainSpan = document.createElement('span');
+  domainSpan.className = 'forcedfocus-domain';
+  domainSpan.textContent = blockedDomain; // R2: textContent — safe, no XSS
+  message.appendChild(domainSpan);
+  message.appendChild(document.createTextNode(' has been blocked by ForcedFocus.'));
+
+  const timer = document.createElement('div');
+  timer.className = 'forcedfocus-timer';
+  timer.id = 'timer';
+  timer.textContent = 'Session ends in: calculating...';
+
+  const footer = document.createElement('p');
+  footer.className = 'forcedfocus-footer';
+  footer.textContent = 'Use your focused time productively. Consider working on important tasks.';
+
+  const closeBtn = document.createElement('a');
+  closeBtn.href = '#';
+  closeBtn.className = 'forcedfocus-button';
+  closeBtn.id = 'closeTab';
+  closeBtn.textContent = 'Close This Tab';
+
+  container.appendChild(icon);
+  container.appendChild(title);
+  container.appendChild(message);
+  container.appendChild(timer);
+  container.appendChild(footer);
+  container.appendChild(closeBtn);
+  document.body.appendChild(container);
+
   // Add close tab functionality
-  document.getElementById('closeTab').addEventListener('click', (e) => {
+  closeBtn.addEventListener('click', (e) => {
     e.preventDefault();
     window.close();
   });
-  
-  // Fetch remaining time from the extension
-  chrome.runtime.sendMessage({action: 'getTimeRemaining'}, (response) => {
-    if (response && response.remaining) {
-      const timer = document.getElementById('timer');
-      if (timer) {
-        const minutes = Math.floor(response.remaining / 60);
-        const seconds = response.remaining % 60;
-        timer.textContent = `Session ends in: ${minutes}:${seconds.toString().padStart(2, '0')}`;
-      }
+
+  // R7: Guard all chrome.runtime calls against extension context invalidation
+  function isExtensionValid() {
+    try {
+      return !!(chrome.runtime && chrome.runtime.id);
+    } catch {
+      return false;
     }
-  });
-  
-  // Periodically update the timer
-  setInterval(() => {
-    chrome.runtime.sendMessage({action: 'getTimeRemaining'}, (response) => {
-      if (response && response.remaining) {
-        const timer = document.getElementById('timer');
-        if (timer) {
-          const minutes = Math.floor(response.remaining / 60);
-          const seconds = response.remaining % 60;
-          timer.textContent = `Session ends in: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  // Fetch remaining time from the extension
+  function updateTimer() {
+    if (!isExtensionValid()) {
+      clearInterval(timerPoll);
+      const t = document.getElementById('timer');
+      if (t) t.textContent = 'Session active — stay focused!';
+      return;
+    }
+
+    try {
+      chrome.runtime.sendMessage({action: 'getTimeRemaining'}, (response) => {
+        if (chrome.runtime.lastError) {
+          // Service worker sleeping or extension reloaded
+          const t = document.getElementById('timer');
+          if (t) t.textContent = 'Session active — stay focused!';
+          return;
         }
-      }
-    });
-  }, 1000);
+        if (response && response.remaining > 0) {
+          const t = document.getElementById('timer');
+          if (t) {
+            const h = Math.floor(response.remaining / 3600);
+            const minutes = Math.floor((response.remaining % 3600) / 60);
+            const seconds = response.remaining % 60;
+            t.textContent = `Session ends in: ${h > 0 ? h + ':' : ''}${String(minutes).padStart(2, '0')}:${String(seconds).toString().padStart(2, '0')}`;
+          }
+        } else if (response && response.remaining === 0) {
+          const t = document.getElementById('timer');
+          if (t) t.textContent = 'Session ended! You can close this tab.';
+        }
+      });
+    } catch (e) {
+      clearInterval(timerPoll);
+    }
+  }
+
+  updateTimer();
+  // R5/P3: Poll every 2s instead of 1s to reduce daemon load
+  const timerPoll = setInterval(updateTimer, 2000);
 }
