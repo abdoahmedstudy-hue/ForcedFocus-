@@ -162,6 +162,12 @@ function renderSettings() {
         `;
     }
     els.settingsGrid.innerHTML = html;
+
+    // Notifications
+    const intentEnabled = document.getElementById('intentNotifEnabled');
+    const intentInterval = document.getElementById('intentNotifInterval');
+    if (intentEnabled) intentEnabled.checked = settings.intent_notification_enabled !== false;
+    if (intentInterval) intentInterval.value = settings.intent_notification_interval || 15;
 }
 
 async function saveSettings() {
@@ -175,6 +181,11 @@ async function saveSettings() {
         els.settingsGrid.querySelectorAll('select').forEach(sel => {
             newSettings[sel.dataset.key] = sel.value;
         });
+
+        const intentEnabled = document.getElementById('intentNotifEnabled');
+        const intentInterval = document.getElementById('intentNotifInterval');
+        if (intentEnabled) newSettings.intent_notification_enabled = intentEnabled.checked;
+        if (intentInterval) newSettings.intent_notification_interval = parseInt(intentInterval.value);
 
         const res = await api('POST', '/api/settings', { settings: newSettings });
         if (res.status === 'ok') {

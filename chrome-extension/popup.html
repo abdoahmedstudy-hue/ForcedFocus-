@@ -97,21 +97,7 @@
                 </div>
             </div>
 
-            <div style="margin-bottom: 12px;">
-                <input type="text" id="sessionIntent" placeholder="What are you focusing on? (Optional)" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text); border-radius: var(--r); padding: 10px 12px; font-size: 13px; outline: none; font-family: inherit;">
-            </div>
 
-            <div style="margin-bottom: 12px;">
-                <input type="text" id="sessionIntent" placeholder="What are you focusing on? (Optional)" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text); border-radius: var(--r); padding: 10px 12px; font-size: 13px; outline: none; font-family: inherit;">
-            </div>
-
-            <div style="margin-bottom: 12px;">
-                <input type="text" id="sessionIntent" placeholder="What are you focusing on? (Optional)" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text); border-radius: var(--r); padding: 10px 12px; font-size: 13px; outline: none; font-family: inherit;">
-            </div>
-
-            <div style="margin-bottom: 12px;">
-                <input type="text" id="sessionIntent" placeholder="What are you focusing on? (Optional)" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text); border-radius: var(--r); padding: 10px 12px; font-size: 13px; outline: none; font-family: inherit;">
-            </div>
 
             <div class="rescue-box" style="margin-bottom: 12px; padding: 10px; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--r);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -130,9 +116,13 @@
 
         <!-- Active Controls -->
         <div class="controls hidden" id="activeControls">
-            <div id="activeIntentContainer" style="display: none; margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: var(--r); text-align: center; border-left: 3px solid #6366f1;">
-                <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🎯 Focus Intent</div>
-                <div id="activeIntent" style="font-size: 14px; font-weight: 500; color: var(--text);"></div>
+            <div id="activeIntentContainer" style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: var(--r); text-align: center; border-left: 3px solid #6366f1;">
+                <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">🎯 Focus Intent</div>
+                <div id="activeIntentDisplay" style="display: none; font-size: 14px; font-weight: 500; color: var(--text);"></div>
+                <div id="activeIntentInputBox" style="display: flex; gap: 8px;">
+                    <input type="text" id="activeIntentInput" placeholder="What are you working on?" style="flex: 1; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: var(--text); border-radius: 4px; padding: 6px 10px; font-size: 12px; outline: none;">
+                    <button id="btnSaveIntent" style="background: var(--blue); color: white; border: none; border-radius: 4px; padding: 6px 10px; font-size: 12px; cursor: pointer; font-weight: 600;">Save</button>
+                </div>
             </div>
             <div class="info-row">
                 <span class="info-label">Mode</span>

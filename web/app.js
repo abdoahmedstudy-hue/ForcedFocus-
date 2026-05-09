@@ -350,13 +350,20 @@ function setActiveUI(status) {
     // ── 4. Main Timer Logic ──
     if (isFullyActive) {
         const intentContainer = document.getElementById('activeIntentContainer');
-        const intentText = document.getElementById('activeIntent');
-        if (intentContainer && intentText) {
+        const intentDisplay = document.getElementById('activeIntentDisplay');
+        const intentInputBox = document.getElementById('activeIntentInputBox');
+
+        if (intentContainer) {
+            intentContainer.style.display = 'block';
             if (status.intent) {
-                intentText.textContent = status.intent;
-                intentContainer.style.display = 'block';
+                if (intentDisplay) {
+                    intentDisplay.textContent = status.intent;
+                    intentDisplay.style.display = 'block';
+                }
+                if (intentInputBox) intentInputBox.style.display = 'none';
             } else {
-                intentContainer.style.display = 'none';
+                if (intentDisplay) intentDisplay.style.display = 'none';
+                if (intentInputBox) intentInputBox.style.display = 'flex';
             }
         }
         // Mode & expires info
@@ -628,8 +635,7 @@ function initEvents() {
     // Start button
     els.btnStart.addEventListener('click', async () => {
         let payload = {};
-        const intentInput = document.getElementById('sessionIntent');
-        const intentVal = intentInput && intentInput.value.trim() !== '' ? intentInput.value.trim() : null;
+        const intentVal = null; // Set via active state now
 
         if (sessionType === 'pomodoro') {
             const totalMin = (pomoFocusMin + pomoBreakMin) * pomoCycles;
@@ -974,4 +980,30 @@ function renderSessionGroups() {
 }
 
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+    init();
+
+    const btnSaveIntent = document.getElementById('btnSaveIntent');
+    if (btnSaveIntent) {
+        btnSaveIntent.addEventListener('click', async () => {
+            const input = document.getElementById('activeIntentInput');
+            if (input && input.value.trim() !== '') {
+                btnSaveIntent.textContent = '...';
+                btnSaveIntent.disabled = true;
+                try {
+                    const res = await api('POST', '/api/intent', { intent: input.value.trim() });
+                    if (res.status === 'ok') {
+                        refreshStatus();
+                    } else {
+                        showToast(res.message || 'Failed to save intent');
+                    }
+                } catch (e) {
+                    showToast('Failed to save intent');
+                } finally {
+                    btnSaveIntent.textContent = 'Save Target';
+                    btnSaveIntent.disabled = false;
+                }
+            }
+        });
+    }
+});
