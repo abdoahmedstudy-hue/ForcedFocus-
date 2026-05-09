@@ -1407,6 +1407,8 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
             self._send_json(self.server.daemon_ref._cmd_get_lists())
         elif path == "/" or path == "":
             self._send_file(WEB_DIR / "index.html")
+        elif path == "/menubar":
+            self._send_file(WEB_DIR / "menubar.html")
         else:
             self._send_file(WEB_DIR / path.lstrip("/"))
 
