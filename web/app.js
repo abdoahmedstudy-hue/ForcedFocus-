@@ -438,9 +438,6 @@ function setActiveUI(status) {
         
     } else {
         // Idle state
-        const intentContainer = document.getElementById('activeIntentContainer');
-        if (intentContainer) intentContainer.style.display = 'none';
-
         els.modeDisplay.textContent = '—';
         els.expiresDisplay.textContent = '—';
         els.pomoStatus.classList.add('hidden');
@@ -646,13 +643,12 @@ function initEvents() {
                 session_type: 'pomodoro',
                 focus_minutes: pomoFocusMin,
                 break_minutes: pomoBreakMin,
-                cycles: pomoCycles,
-                intent: intentVal
+                cycles: pomoCycles
             };
         } else {
             const duration = selectedDuration;
             totalSessionSeconds = duration * 60;
-            payload = { duration, mode: currentMode, session_type: 'standard', intent: intentVal };
+            payload = { duration, mode: currentMode, session_type: 'standard' };
         }
         
         payload.groups = Array.from(selectedGroups);

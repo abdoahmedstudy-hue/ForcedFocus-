@@ -142,7 +142,7 @@ CDN_INFRASTRUCTURE_DOMAINS = [
     "akamaized.net", "akamai.net", "akamaihd.net", "fastly.net", "fastlylb.net",
     "edgecastcdn.net", "stackpathdns.com", "azureedge.net", "azurefd.net",
     # Google shared infrastructure
-    "gstatic.com", "googleapis.com", "googleusercontent.com", "google.com",
+    "gstatic.com", "googleapis.com", "googleusercontent.com",
     # Fonts & typography
     "fonts.googleapis.com", "fonts.gstatic.com", "use.typekit.net", "use.fontawesome.com",
     # JS/CSS package CDNs
@@ -401,7 +401,6 @@ class ForcedFocusDaemon:
         self.whitelist_expanded_count: int = 0
         self.total_duration_seconds: int = 0
         self.session_type: str = "standard"
-        self.intent: str | None = None
         self.pomo_focus_minutes: int = 0
         self.pomo_break_minutes: int = 0
         self.pomo_total_cycles: int = 0
@@ -745,7 +744,6 @@ class ForcedFocusDaemon:
         self.session_expiry = expiry
         self.remaining_seconds = remaining
         self.session_type = data.get("session_type", "standard")
-        self.intent = data.get("intent", None)
         self.pomo_focus_minutes = data.get("pomo_focus_minutes", 0)
         self.pomo_break_minutes = data.get("pomo_break_minutes", 0)
         self.pomo_total_cycles = data.get("pomo_total_cycles", 0)
@@ -952,7 +950,6 @@ class ForcedFocusDaemon:
                 "mode": mode,
                 "duration_minutes": duration_minutes,
                 "session_type": self.session_type,
-                "intent": self.intent,
                 "pomo_focus_minutes": self.pomo_focus_minutes,
                 "pomo_break_minutes": self.pomo_break_minutes,
                 "pomo_total_cycles": self.pomo_total_cycles,
@@ -1137,7 +1134,6 @@ class ForcedFocusDaemon:
                 "pending_unlock": self.pending_unlock_at.strftime("%H:%M:%S") if self.pending_unlock_at else None,
                 "pending_unlock_seconds": int(max(0, self._mono_unlock_end - now_mono)) if self._mono_unlock_end > 0 else None,
                 "session_type": self.session_type,
-                "intent": self.intent,
                 "schedules": schedules_res
             }
             if self.session_type == "pomodoro":
@@ -1540,7 +1536,6 @@ class ForcedFocusDaemon:
         self.total_duration_seconds = 0
         self.mode = "blacklist"
         self.session_type = "standard"
-        self.intent = None
         self.pomo_focus_minutes = 0
         self.pomo_break_minutes = 0
         self.pomo_total_cycles = 0
@@ -1788,7 +1783,6 @@ class ForcedFocusDaemon:
                 "duration_minutes": self.total_duration_seconds // 60,
                 "mode": self.mode,
                 "session_type": self.session_type,
-                "intent": self.intent,
                 "mono_elapsed": get_continuous_time() - (self._mono_session_end - self.total_duration_seconds),
                 "last_persist_wall": datetime.now().isoformat(),
                 "settings": self.settings

@@ -466,8 +466,7 @@ function initEvents() {
                     focus_minutes: pomoFocusMin,
                     break_minutes: pomoBreakMin,
                     cycles: pomoCycles,
-                    groups: Array.from(selectedGroups),
-                    intent: intentVal
+                    groups: Array.from(selectedGroups)
                 };
             } else {
                 totalSecs = duration * 60;
@@ -475,8 +474,7 @@ function initEvents() {
                     duration, 
                     mode, 
                     session_type: 'standard',
-                    groups: Array.from(selectedGroups),
-                    intent: intentVal
+                    groups: Array.from(selectedGroups) 
                 };
             }
 

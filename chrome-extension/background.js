@@ -459,8 +459,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({
         remaining: cachedStatus.remaining_seconds || 0,
         phase: cachedStatus.pomo_phase || null,
-        phaseRemaining: cachedStatus.pomo_phase_remaining || null,
-        intent: cachedStatus.intent || null
+        phaseRemaining: cachedStatus.pomo_phase_remaining || null
       });
     } else {
       fetch(`${API}/api/status`, { signal: AbortSignal.timeout(2000) })

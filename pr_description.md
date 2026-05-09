@@ -1,3 +1,15 @@
+🧪 Testing Improvement: Add coverage for `_enforce_block` error handling
+
+🎯 **What:**
+The `_enforce_block` method in `forcefocus_daemon.py` performs complex operations including invoking `chflags` via `subprocess.run` and several other file I/O operations. Previously, its error handling (non-zero `chflags` exit codes and generic exceptions during file writing) was completely untested, leaving a coverage gap for these edge cases.
+
+📊 **Coverage:**
+Two new tests have been added to `tests/test_forcefocus_daemon.py`:
+- `test_enforce_block_chflags_error`: Mocks `subprocess.run` to return an exit code `1` and simulate permission errors. It verifies that `logging.warning` is correctly called twice (once for `nouchg` and once for `uchg`), and crucially, verifies that the process still successfully proceeds with subsequent configuration logic (`write_text`, `_enforce_firewall`, `_clear_browser_caches`, etc.) instead of crashing early.
+- `test_enforce_block_exception`: Mocks a generic catastrophic exception during `Path.read_text` to verify the generic `except Exception:` block properly catches the error and reports it via `logging.error` without completely panicking the daemon loop.
+
+✨ **Result:**
+By adding these tests, we guarantee the reliability of the `_enforce_block` operation against environmental inconsistencies, ensuring failures during system configuration are strictly logged and handled seamlessly without impacting core functionality.
 ## Title: "🧪 Add comprehensive test suite for CLI send_command"
 
 ## Description
@@ -38,3 +50,15 @@ The CLI's core communication mechanism is now verified, ensuring failures and su
 - `test_start_session_invalid_mode`: Verifies that invalid session modes correctly return an error.
 
 ✨ **Result:** Test coverage is improved, specifically ensuring that user inputs for Pomodoro/blacklist sessions are validated accurately and return predictable error states.
+
+🧪 Add tests for forcefocus_cli.cmd_web
+
+🎯 **What:** The `cmd_web` function in `forcefocus_cli.py` lacked unit tests.
+
+📊 **Coverage:** The new `TestForceFocusCLICmdWeb` class tests:
+* Starting the web interface when the primary script exists in `/usr/local/bin`
+* Starting the web interface when the primary script is missing, falling back to the directory containing the CLI script
+* Providing a helpful error message when the web script isn't found anywhere
+* Stopping the web interface and correctly handling the `stop` action
+
+✨ **Result:** Enhanced test coverage ensures that CLI commands to start/stop the web interface are thoroughly tested and verified.

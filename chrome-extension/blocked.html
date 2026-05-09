@@ -116,10 +116,6 @@
             This site is blocked by ForcedFocus.<br>
             Stay focused — you've got this! 💪
         </p>
-        <div id="intentContainer" style="display: none; margin-top: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 12px; border-left: 4px solid #6366f1;">
-            <div style="font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem;">🎯 You are supposed to be</div>
-            <div id="intentText" style="font-size: 1.2rem; font-weight: 600; color: #e2e8f0; line-height: 1.4;"></div>
-        </div>
         <div class="badge">⚡ ForcedFocus Active</div>
     </div>
     <script>
@@ -155,16 +151,6 @@
                     }
                     const badge = document.querySelector('.badge');
                     if (!badge) return;
-
-                    const intentContainer = document.getElementById('intentContainer');
-                    const intentText = document.getElementById('intentText');
-
-                    if (response && response.intent) {
-                        intentText.textContent = response.intent;
-                        intentContainer.style.display = 'block';
-                    } else if (intentContainer) {
-                        intentContainer.style.display = 'none';
-                    }
 
                     if (response && response.remaining > 0) {
                         const h = Math.floor(response.remaining / 3600);
