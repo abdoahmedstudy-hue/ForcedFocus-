@@ -60,7 +60,9 @@ DEFAULT_SETTINGS = {
     "sound_break": "Break Time.mp3",
     "sound_end": "Session End .mp3",
     "sound_scheduled": "Scheduled meeting.mp3",
-    "sound_blocked": "Blocked site open.mp3"
+    "sound_blocked": "Blocked site open.mp3",
+    "intent_notification_enabled": True,
+    "intent_notification_interval": 15
 }
 
 MARKER_BEGIN      = "# ──── BEGIN FORCEFOCUS ────"
@@ -412,6 +414,7 @@ class ForcedFocusDaemon:
         self._mono_session_end: float = 0.0
         self._mono_unlock_end: float = 0.0
         self._mono_pomo_phase_end: float = 0.0
+        self._mono_last_intent_notif: float = 0.0
         self._reenforce_flag = False  # Set by signal handler, handled by watchdog
         self.schedules: list = []
         self.settings = self._load_settings()
@@ -808,6 +811,15 @@ class ForcedFocusDaemon:
                 self._enforce_block()
         logging.info("Resuming %s session — %d min remaining.", self.mode, int(remaining / 60))
 
+    def _set_intent(self, intent: str) -> dict:
+        with self.lock:
+            if not self.active:
+                return {"status": "error", "message": "No active session to set intent for."}
+            self.intent = intent.strip() if intent else None
+            self._save_session()
+            logging.info("Session intent updated to: %s", self.intent)
+            return {"status": "ok", "message": "Intent updated."}
+
     def _start_session(self, cmd: dict) -> dict:
         duration_minutes = cmd.get("duration_minutes", 120)
         mode = cmd.get("mode", "blacklist")
@@ -903,6 +915,7 @@ class ForcedFocusDaemon:
 
             self.mode = mode
             self.session_type = cmd.get("session_type", "standard")
+            self.intent = cmd.get("intent", None) or self.intent # Keep existing intent if set via /api/intent and not provided in start
             self.session_expiry = datetime.now() + timedelta(minutes=duration_minutes)
             self.active = True
             self.total_duration_seconds = duration_minutes * 60
@@ -911,6 +924,7 @@ class ForcedFocusDaemon:
             now_mono = get_continuous_time()
             self._mono_session_end = now_mono + (duration_minutes * 60)
             self._mono_unlock_end = 0.0
+            self._mono_last_intent_notif = now_mono
 
             # Extract pomodoro params from command
             if self.session_type == "pomodoro":
@@ -1406,6 +1420,17 @@ class ForcedFocusDaemon:
             result.pop()
         return "\n".join(result)
 
+    def _send_mac_notification(self, title: str, message: str, subtitle: str = None):
+        try:
+            script = f'display notification "{message}" with title "{title}"'
+            if subtitle:
+                script += f' subtitle "{subtitle}"'
+            # Play a default system sound to get attention
+            script += ' sound name "Glass"'
+            subprocess.run(["osascript", "-e", script], capture_output=True, timeout=2)
+        except Exception as e:
+            logging.error("Failed to send notification: %s", e)
+
     def _enforce_current_mode(self):
         if self.mode == "whitelist":
             self._enforce_whitelist()
@@ -1450,6 +1475,7 @@ class ForcedFocusDaemon:
             self._remove_block()
             self._persist_session_lock()
             self._play_sound("break")
+            self._send_mac_notification("Break Started", f"Take a {self.pomo_break_minutes}m break! Good job focusing.")
             logging.info("Pomodoro: cycle %d focus ended. Break for %dm.", 
                          self.pomo_current_cycle, self.pomo_break_minutes)
         else:
@@ -1465,12 +1491,14 @@ class ForcedFocusDaemon:
             self._enforce_current_mode()
             self._persist_session_lock()
             self._play_sound("start")
+            self._send_mac_notification("Focus Time", f"Cycle {self.pomo_current_cycle} of {self.pomo_total_cycles} has started.")
             logging.info("Pomodoro: cycle %d/%d focus started.", 
                          self.pomo_current_cycle, self.pomo_total_cycles)
 
     def _cleanup_session(self):
         logging.info("Cleaning up session (mode=%s)...", self.mode)
         self._play_sound("end")
+        self._send_mac_notification("Session Complete", "Great job! Your ForcedFocus session has ended.")
         was_whitelist = self.mode == "whitelist"
 
         try:
@@ -1979,6 +2007,14 @@ class ForcedFocusDaemon:
 
             now_mono = get_continuous_time()
 
+            # Intent Continuous Notification
+            if self.intent and self.settings.get("intent_notification_enabled", True):
+                interval = int(self.settings.get("intent_notification_interval", 15)) * 60
+                if now_mono - getattr(self, '_mono_last_intent_notif', now_mono) >= interval:
+                    self._mono_last_intent_notif = now_mono
+                    self._send_mac_notification("Focus Reminder", f"Target: {self.intent}")
+
+
             self._wd_persist_counter += 1
             if self._wd_persist_counter >= 120:  # 120 * 250ms = 30s
                 self._wd_persist_counter = 0
@@ -2314,6 +2350,8 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
             if "schedule_at" in body:
                 cmd["schedule_at_time"] = body["schedule_at"]
             self._send_json(self.server.daemon_ref._start_session(cmd))
+        elif path == "/api/intent":
+            self._send_json(self.server.daemon_ref._set_intent(body.get("intent", "")))
         elif path == "/api/settings":
             self._send_json(self.server.daemon_ref._cmd_save_settings(body))
         elif path == "/api/upload-sound":

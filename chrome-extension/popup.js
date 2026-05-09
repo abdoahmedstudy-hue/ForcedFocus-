@@ -223,6 +223,22 @@ function renderStatus(data) {
 
     if (idleControls) idleControls.classList.toggle('hidden', active);
     if (activeControls) activeControls.classList.toggle('hidden', !active);
+
+    const intentDisplay = $('#activeIntentDisplay');
+    const intentInputBox = $('#activeIntentInputBox');
+
+    if (active) {
+        if (data.intent) {
+            if (intentDisplay) {
+                intentDisplay.textContent = data.intent;
+                intentDisplay.style.display = 'block';
+            }
+            if (intentInputBox) intentInputBox.style.display = 'none';
+        } else {
+            if (intentDisplay) intentDisplay.style.display = 'none';
+            if (intentInputBox) intentInputBox.style.display = 'flex';
+        }
+    }
     if (stopDialog) stopDialog.classList.add('hidden');
 
     if (active) {
@@ -438,6 +454,8 @@ function initEvents() {
             btnStart.disabled = true;
 
             let payload = {};
+            const intentVal = null; // Will be set after session starts via active state
+
             if (sessionType === 'pomodoro') {
                 const totalMin = (pomoFocusMin + pomoBreakMin) * pomoCycles;
                 totalSecs = totalMin * 60;
@@ -607,6 +625,30 @@ async function init() {
     await fetchGroups();
 
     initEvents();
+
+    const btnSaveIntent = $('#btnSaveIntent');
+    if (btnSaveIntent) {
+        btnSaveIntent.addEventListener('click', async () => {
+            const input = $('#activeIntentInput');
+            if (input && input.value.trim() !== '') {
+                btnSaveIntent.textContent = '...';
+                btnSaveIntent.disabled = true;
+                try {
+                    const res = await api('POST', '/api/intent', { intent: input.value.trim() });
+                    if (res.status === 'ok') {
+                        await refresh();
+                    } else {
+                        showError(res.message || 'Failed to save intent');
+                    }
+                } catch (e) {
+                    showError('Failed to save intent: ' + e.message);
+                } finally {
+                    btnSaveIntent.textContent = 'Save';
+                    btnSaveIntent.disabled = false;
+                }
+            }
+        });
+    }
 
     // S3: Listen for phase change broadcasts from background worker
     // Triggers immediate UI refresh when Pomodoro transitions focus↔break
