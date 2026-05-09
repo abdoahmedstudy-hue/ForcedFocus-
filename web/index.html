@@ -82,6 +82,7 @@
                 id="activeIntentInputBox"
                 style="display: flex; gap: 8px; align-items: center"
               >
+                <label for="activeIntentInput" class="sr-only">Focus Intent</label>
                 <input
                   type="text"
                   id="activeIntentInput"
@@ -314,6 +315,7 @@
                     <button class="dur-btn" data-minutes="480">8h</button>
                   </div>
                   <div class="custom-duration">
+                    <label for="customMinutes" class="sr-only">Custom duration in minutes</label>
                     <input
                       type="number"
                       id="customMinutes"
@@ -401,6 +403,7 @@
                   <h2 class="card-title" style="margin-bottom: 0">
                     🛡️ Rescue Throne
                   </h2>
+                  <label for="rescueDuration" class="sr-only">Rescue duration in minutes</label>
                   <select
                     id="rescueDuration"
                     class="rescue-select"
@@ -513,6 +516,7 @@
                   These sites will be blocked in Blacklist mode.
                 </p>
                 <div class="add-domain">
+                  <label for="blacklistInput" class="sr-only">Domains to blacklist</label>
                   <textarea
                     id="blacklistInput"
                     placeholder="e.g. reddit.com — or paste multiple domains, one per line"
@@ -542,6 +546,7 @@
                   Only these sites will be allowed in Whitelist mode.
                 </p>
                 <div class="add-domain">
+                  <label for="whitelistInput" class="sr-only">Domains to whitelist</label>
                   <textarea
                     id="whitelistInput"
                     placeholder="e.g. github.com — or paste multiple domains, one per line"

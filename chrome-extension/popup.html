@@ -82,6 +82,7 @@
             <input
               type="number"
               id="customMin"
+              aria-label="Custom minutes"
               min="1"
               max="1440"
               placeholder="Custom minutes"
@@ -102,7 +103,7 @@
           </div>
           <div class="pomo-fields">
             <div class="pomo-field">
-              <label>Focus</label>
+              <label for="pomoFocus">Focus</label>
               <input
                 type="number"
                 id="pomoFocus"
@@ -112,11 +113,11 @@
               />
             </div>
             <div class="pomo-field">
-              <label>Break</label>
+              <label for="pomoBreak">Break</label>
               <input type="number" id="pomoBreak" min="1" max="60" value="5" />
             </div>
             <div class="pomo-field">
-              <label>Cycles</label>
+              <label for="pomoCycles">Cycles</label>
               <input type="number" id="pomoCycles" min="1" max="50" value="4" />
             </div>
           </div>
@@ -157,6 +158,7 @@
             >
             <select
               id="rescueDuration"
+              aria-label="Rescue duration in minutes"
               style="
                 background: rgba(255, 255, 255, 0.05);
                 border: 1px solid rgba(255, 255, 255, 0.1);
@@ -218,6 +220,7 @@
             <input
               type="text"
               id="activeIntentInput"
+              aria-label="Focus Intent"
               placeholder="What are you working on?"
               style="
                 flex: 1;
@@ -286,6 +289,7 @@
         <input
           type="password"
           id="passInput"
+          aria-label="Kill-switch passphrase"
           placeholder="Passphrase"
           autocomplete="off"
         />
