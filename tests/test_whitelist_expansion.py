@@ -1,6 +1,7 @@
 import unittest
 from forcefocus_daemon import ForcedFocusDaemon
 
+
 class TestWhitelistExpansion(unittest.TestCase):
     def test_google_not_whitelisted_by_default(self):
         daemon = ForcedFocusDaemon()
@@ -19,5 +20,6 @@ class TestWhitelistExpansion(unittest.TestCase):
         self.assertIn("gstatic.com", expanded)
         self.assertIn("googleapis.com", expanded)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()
