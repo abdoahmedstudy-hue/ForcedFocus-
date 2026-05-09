@@ -5,9 +5,16 @@
 const $ = (sel) => document.querySelector(sel);
 
 // R7: HTML escaping for safe rendering
+const HTML_ESCAPE_MAP = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+};
+
 function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, c =>
-        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#039;"}[c]));
+    return String(str).replace(/[&<>"']/g, c => HTML_ESCAPE_MAP[c]);
 }
 
 const els = {
