@@ -474,6 +474,19 @@ body::after {
     background: var(--bg2);
     border: 1px solid var(--border);
     border-radius: var(--r);
+    animation: popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    transform-origin: top center;
+}
+
+@keyframes popIn {
+    from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .stop-dialog {
+        animation: none;
+    }
 }
 
 .stop-dialog p {

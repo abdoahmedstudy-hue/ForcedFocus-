@@ -102,6 +102,8 @@ const els = {
 
 // ── API Helpers ──────────────────────────────────────────────────────────────
 
+const activeRequests = new Map();
+
 async function api(method, path, body = null) {
     const headers = { 'Content-Type': 'application/json' };
     // Include API token for mutation requests (POST, DELETE)
@@ -110,6 +112,17 @@ async function api(method, path, body = null) {
     }
     const opts = { method, headers };
     if (body) opts.body = JSON.stringify(body);
+
+    // Flow Reliability: Prevent GET request race conditions and overlap
+    let requestKey = method + ':' + (path || '');
+    if (method === 'GET') {
+        if (activeRequests.has(requestKey)) {
+            activeRequests.get(requestKey).abort();
+        }
+        const controller = new AbortController();
+        opts.signal = controller.signal;
+        activeRequests.set(requestKey, controller);
+    }
     try {
         const res = await fetch(API + path, opts);
         // S4: Auto-refresh token on 401 (daemon restarted)
@@ -120,8 +133,10 @@ async function api(method, path, body = null) {
             return await retry.json();
         }
         const data = await res.json();
+        if (method === 'GET') activeRequests.delete(requestKey);
         return data;
     } catch (err) {
+        if (err.name === 'AbortError') return new Promise(() => {}); // Never resolves if aborted
         console.error('API Error:', err);
         return { status: 'error', message: 'Communication failed.' };
     }
@@ -465,13 +480,19 @@ function renderDomainList(container, domains, listName) {
         removeBtn.dataset.list = listName;
         removeBtn.dataset.domain = domain;
         removeBtn.textContent = '✕';
+        removeBtn.setAttribute('aria-label', `Remove ${domain}`);
         removeBtn.addEventListener('click', async () => {
-            const res = await api('DELETE', `/api/lists/${listName}/${domain}`);
-            if (res.status === 'ok') {
-                showToast(`Removed ${domain}`);
-                refreshLists();
-            } else {
-                showToast('Error: ' + res.message);
+            removeBtn.disabled = true;
+            try {
+                const res = await api('DELETE', `/api/lists/${listName}/${domain}`);
+                if (res.status === 'ok') {
+                    showToast(`Removed ${domain}`);
+                    refreshLists();
+                } else {
+                    showToast('Error: ' + res.message);
+                }
+            } finally {
+                removeBtn.disabled = false;
             }
         });
         li.appendChild(span);
@@ -700,14 +721,25 @@ function initEvents() {
             els.modalError.classList.remove('hidden');
             return;
         }
-        const res = await api('POST', '/api/stop', { key });
-        if (res.status === 'pending' || res.status === 'ok') {
-            els.stopModal.classList.add('hidden');
-            showToast(res.message);
-            refreshStatus();
-        } else {
-            els.modalError.textContent = res.message || 'Invalid passphrase.';
-            els.modalError.classList.remove('hidden');
+
+        const btn = $('#btnConfirmStop');
+        btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.textContent = 'Stopping...';
+
+        try {
+            const res = await api('POST', '/api/stop', { key });
+            if (res.status === 'pending' || res.status === 'ok') {
+                els.stopModal.classList.add('hidden');
+                showToast(res.message);
+                refreshStatus();
+            } else {
+                els.modalError.textContent = res.message || 'Invalid passphrase.';
+                els.modalError.classList.remove('hidden');
+            }
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
         }
     });
 
@@ -763,51 +795,65 @@ function extractDomain(input) {
 
 async function addDomain(listName) {
     const input = listName === 'blacklist' ? els.blacklistInput : els.whitelistInput;
+    const btnId = listName === 'blacklist' ? '#btnAddBlacklist' : '#btnAddWhitelist';
+    const btn = $(btnId);
+
     const raw = input.value.trim();
     if (!raw) return;
 
-    // Split by newlines to support bulk paste
-    const lines = raw.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
-    const domains = [];
-    const invalid = [];
+    if (btn) btn.disabled = true;
+    const originalText = btn ? btn.textContent : '';
+    if (btn) btn.textContent = 'Adding...';
 
-    for (const line of lines) {
-        const domain = extractDomain(line);
-        // Basic validation
-        if (/^[a-z0-9]([a-z0-9\-]*\.)+[a-z]{2,}$/.test(domain)) {
-            domains.push(domain);
-        } else {
-            invalid.push(line);
+    try {
+        // Split by newlines to support bulk paste
+        const lines = raw.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
+        const domains = [];
+        const invalid = [];
+
+        for (const line of lines) {
+            const domain = extractDomain(line);
+            // Basic validation
+            if (/^[a-z0-9]([a-z0-9\-]*\.)+[a-z]{2,}$/.test(domain)) {
+                domains.push(domain);
+            } else {
+                invalid.push(line);
+            }
         }
-    }
 
-    if (domains.length === 0) {
-        showToast('Invalid domain. Example: reddit.com or https://reddit.com/r/test');
-        return;
-    }
-
-    if (invalid.length > 0) {
-        showToast(`Skipped ${invalid.length} invalid: ${invalid.slice(0, 3).join(', ')}`);
-    }
-
-    // Use bulk endpoint for multiple domains, single endpoint for one
-    if (domains.length === 1) {
-        const res = await api('POST', `/api/lists/${listName}`, { domain: domains[0] });
-        if (res.status === 'ok') {
-            input.value = '';
-            showToast(`Added ${domains[0]} to ${listName}`);
-            refreshLists();
-        } else {
-            showToast('Error: ' + res.message);
+        if (domains.length === 0) {
+            showToast('Invalid domain. Example: reddit.com or https://reddit.com/r/test');
+            return;
         }
-    } else {
-        const res = await api('POST', `/api/lists/${listName}/bulk`, { domains });
-        if (res.status === 'ok') {
-            input.value = '';
-            showToast(`Added ${domains.length} domains to ${listName}`);
-            refreshLists();
+
+        if (invalid.length > 0) {
+            showToast(`Skipped ${invalid.length} invalid: ${invalid.slice(0, 3).join(', ')}`);
+        }
+
+        // Use bulk endpoint for multiple domains, single endpoint for one
+        if (domains.length === 1) {
+            const res = await api('POST', `/api/lists/${listName}`, { domain: domains[0] });
+            if (res.status === 'ok') {
+                input.value = '';
+                showToast(`Added ${domains[0]} to ${listName}`);
+                refreshLists();
+            } else {
+                showToast('Error: ' + res.message);
+            }
         } else {
-            showToast('Error: ' + res.message);
+            const res = await api('POST', `/api/lists/${listName}/bulk`, { domains });
+            if (res.status === 'ok') {
+                input.value = '';
+                showToast(`Added ${domains.length} domains to ${listName}`);
+                refreshLists();
+            } else {
+                showToast('Error: ' + res.message);
+            }
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
         }
     }
 }

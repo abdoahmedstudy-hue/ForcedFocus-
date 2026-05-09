@@ -31,6 +31,10 @@ def get_continuous_time() -> float:
     # CLOCK_MONOTONIC_RAW on macOS maps to mach_continuous_time (includes sleep time)
     return time.clock_gettime(time.CLOCK_MONOTONIC_RAW)
 
+# Constants for optimizations
+COMMON_PREFIXES = ("www.", "m.", "api.", "cdn.", "static.", "app.", "mail.", "login.", "accounts.",
+                   "mobile.", "touch.", "new.", "dev.", "assets.", "cdn1.", "cdn2.", "v.", "video.")
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # CONFIGURATION
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -45,7 +49,8 @@ SOCK_PATH         = "/var/run/forcefocus.sock"
 HOSTS_PATH        = Path("/private/etc/hosts")
 WEB_HOST          = "127.0.0.1"
 WEB_PORT          = 7070
-WEB_DIR           = Path("/usr/local/share/forcefocus/web")
+_local_web        = Path(__file__).resolve().parent / "web"
+WEB_DIR           = _local_web if _local_web.exists() else Path("/usr/local/share/forcefocus/web")
 SETTINGS_FILE     = CONFIG_DIR / "settings.json"
 
 DEFAULT_SETTINGS = {
@@ -348,8 +353,9 @@ class LocalDNSProxy(threading.Thread):
         if domain == "localhost" or domain.endswith(".local"):
             allowed = True
         else:
-            for d in self.ff_daemon.blocked_domains:
-                if domain == d or domain.endswith("." + d):
+            parts = domain.split('.')
+            for i in range(len(parts)):
+                if ".".join(parts[i:]) in self.ff_daemon.active_domains_set:
                     allowed = True
                     break
 
@@ -376,7 +382,8 @@ class ForcedFocusDaemon:
     def __init__(self):
         self.active = False
         self.mode = "blacklist"
-        self.blocked_domains: list[str] = []
+        self.active_domains: list[str] = []
+        self.active_domains_set: set[str] = set()
         self.session_base_domains: list[str] = []  # Raw domains before /etc/hosts expansion
         self.session_expiry: datetime | None = None
         self.pending_unlock_at: datetime | None = None
@@ -384,6 +391,10 @@ class ForcedFocusDaemon:
         self.dns_proxy = None
         self.original_dns: dict[str, str] = {}
         self.whitelist_resolved: dict[str, list[str]] = {}
+        self._cached_lists: dict | None = None
+        self._cached_lists_mtime: float = 0.0
+        self._cached_groups: dict | None = None
+        self._cached_groups_mtime: float = 0.0
         self.whitelist_count: int = 0
         self.whitelist_expanded_count: int = 0
         self.total_duration_seconds: int = 0
@@ -467,9 +478,8 @@ class ForcedFocusDaemon:
 
     def _install_signal_handlers(self):
         def _handler(signum, _frame):
-            name = signal.Signals(signum).name
-            logging.warning("Caught %s — setting re-enforce flag.", name)
             # Non-blocking: just set flag, watchdog will re-enforce (C1 fix)
+            # We keep this handler minimal as only a few functions are signal-safe.
             self._reenforce_flag = True
         signal.signal(signal.SIGTERM, _handler)
         signal.signal(signal.SIGINT, _handler)
@@ -479,7 +489,17 @@ class ForcedFocusDaemon:
 
     def _load_lists(self) -> dict:
         try:
-            return json.loads(LISTS_FILE.read_text())
+            mtime = LISTS_FILE.stat().st_mtime
+        except FileNotFoundError:
+            return {"blacklist": [], "whitelist": []}
+
+        if self._cached_lists is not None and mtime == self._cached_lists_mtime:
+            return {k: v.copy() if isinstance(v, list) else v for k, v in self._cached_lists.items()}
+
+        try:
+            self._cached_lists = json.loads(LISTS_FILE.read_text())
+            self._cached_lists_mtime = mtime
+            return {k: v.copy() if isinstance(v, list) else v for k, v in self._cached_lists.items()}
         except Exception:
             return {"blacklist": [], "whitelist": []}
 
@@ -488,7 +508,17 @@ class ForcedFocusDaemon:
 
     def _load_groups(self) -> dict:
         try:
-            return json.loads(GROUPS_FILE.read_text())
+            mtime = GROUPS_FILE.stat().st_mtime
+        except FileNotFoundError:
+            return {}
+
+        if self._cached_groups is not None and mtime == self._cached_groups_mtime:
+            return {k: v.copy() if isinstance(v, list) else v for k, v in self._cached_groups.items()}
+
+        try:
+            self._cached_groups = json.loads(GROUPS_FILE.read_text())
+            self._cached_groups_mtime = mtime
+            return {k: v.copy() if isinstance(v, list) else v for k, v in self._cached_groups.items()}
         except Exception:
             return {}
 
@@ -527,7 +557,7 @@ class ForcedFocusDaemon:
             }
         return {
             "status": "ok",
-            "domains": self.blocked_domains,
+            "domains": self.active_domains,
             "mode": self.mode
         }
 
@@ -752,12 +782,14 @@ class ForcedFocusDaemon:
         
         if self.mode == "whitelist":
             self.original_dns = data.get("original_dns", {})
-            self.blocked_domains = data.get("blocked_domains", [])
+            self.active_domains = data.get("active_domains", data.get("blocked_domains", []))
+            self.active_domains_set = set(self.active_domains)
             self.whitelist_resolved = data.get("whitelist_resolved", {})
-            self.whitelist_count = data.get("whitelist_count", len(self.blocked_domains))
-            self.whitelist_expanded_count = data.get("whitelist_expanded_count", len(self.blocked_domains))
+            self.whitelist_count = data.get("whitelist_count", len(self.active_domains))
+            self.whitelist_expanded_count = data.get("whitelist_expanded_count", len(self.active_domains))
         else:
-            self.blocked_domains = data.get("blocked_domains", self._get_blacklist_domains())
+            self.active_domains = data.get("active_domains", data.get("blocked_domains", self._get_blacklist_domains()))
+            self.active_domains_set = set(self.active_domains)
         self.session_base_domains = data.get("session_base_domains", [])
 
         if self.session_type == "pomodoro" and self.pomo_phase_expiry:
@@ -871,8 +903,7 @@ class ForcedFocusDaemon:
 
             self.mode = mode
             self.session_type = cmd.get("session_type", "standard")
-            expiry = datetime.now() + timedelta(minutes=duration_minutes)
-            self.session_expiry = expiry
+            self.session_expiry = datetime.now() + timedelta(minutes=duration_minutes)
             self.active = True
             self.total_duration_seconds = duration_minutes * 60
             self.pending_unlock_at = None
@@ -942,19 +973,18 @@ class ForcedFocusDaemon:
                                 wl_domains.extend(groups[gname])
                 self.session_base_domains = list(set(d.strip().lower() for d in wl_domains if d.strip()))
 
-                # MEDIUM #4: In whitelist mode, blocked_domains actually holds the ALLOW-list.
-                # The DNS proxy checks domains against this list to decide what to forward.
-                # Renaming would require changes across session persistence + DNS proxy.
+                # Whitelist mode: active_domains holds the ALLOW-list.
                 if self.session_type == "rescue":
                     wl_domains_expanded = []
                 else:
                     wl_domains_expanded = self._expand_whitelist_domains(wl_domains)
-                self.blocked_domains = wl_domains_expanded
+                self.active_domains = wl_domains_expanded
+                self.active_domains_set = set(self.active_domains)
                 count = len(wl_domains)
                 expanded_count = len(wl_domains_expanded)
                 self.whitelist_count = count
                 self.whitelist_expanded_count = expanded_count
-                session_data["blocked_domains"] = self.blocked_domains
+                session_data["active_domains"] = self.active_domains
                 session_data["session_base_domains"] = self.session_base_domains
                 session_data["original_dns"] = self.original_dns
                 session_data["whitelist_count"] = count
@@ -980,24 +1010,25 @@ class ForcedFocusDaemon:
                         base_bl.extend(sites)
                 self.session_base_domains = list(set(d.strip().lower() for d in base_bl if d.strip() and '.' in d))
                 # Build expanded domain list (for /etc/hosts — needs explicit subdomain entries)
-                self.blocked_domains = self._get_blacklist_domains(selected_groups)
-                session_data["blocked_domains"] = self.blocked_domains
+                self.active_domains = self._get_blacklist_domains(selected_groups)
+                self.active_domains_set = set(self.active_domains)
+                session_data["active_domains"] = self.active_domains
                 session_data["session_base_domains"] = self.session_base_domains
                 self._atomic_write_json(SESSION_LOCK, session_data)
                 self._enforce_block()
-                count = len(self.blocked_domains)
+                count = len(self.active_domains)
                 if self.session_type == "pomodoro":
                     msg = f"Pomodoro (Blacklist): {count} domains blocked for {self.pomo_total_cycles} cycles."
                 else:
                     msg = f"Blacklist mode: {count} domains blocked for {duration_minutes} min."
 
-            logging.info("Session started (%s) — expires %s.", mode, expiry.strftime("%H:%M:%S"))
+            logging.info("Session started (%s) — expires %s.", mode, self.session_expiry.strftime("%H:%M:%S"))
             return {
                 "status": "ok",
                 "message": msg,
                 "mode": mode,
                 "domains_count": count,
-                "expires_at": expiry.strftime("%H:%M:%S"),
+                "expires_at": self.session_expiry.strftime("%H:%M:%S"),
             }
 
     def _request_stop(self, passphrase: str) -> dict:
@@ -1084,7 +1115,7 @@ class ForcedFocusDaemon:
                 "expires_at": self.session_expiry.strftime("%H:%M:%S"),
                 "remaining_seconds": rem,
                 "total_duration_seconds": self.total_duration_seconds,
-                "domains_count": len(self.blocked_domains) if self.mode == "blacklist" else self.whitelist_count,
+                "domains_count": len(self.active_domains) if self.mode == "blacklist" else self.whitelist_count,
                 "whitelist_total_count": None if self.mode == "blacklist" else self.whitelist_expanded_count,
                 "pending_unlock": self.pending_unlock_at.strftime("%H:%M:%S") if self.pending_unlock_at else None,
                 "pending_unlock_seconds": int(max(0, self._mono_unlock_end - now_mono)) if self._mono_unlock_end > 0 else None,
@@ -1136,9 +1167,12 @@ class ForcedFocusDaemon:
                             expanded.add(prefix + asset)
 
                 # Expand with common subdomain prefixes for broader /etc/hosts coverage
-                for prefix in ["www.", "m.", "api.", "cdn.", "static.", "app.", "mail.", "login.", "accounts.", 
-                               "mobile.", "touch.", "new.", "dev.", "assets.", "cdn1.", "cdn2.", "v.", "video."]:
-                    if not domain.startswith(prefix):
+                if domain.startswith(COMMON_PREFIXES):
+                    for prefix in COMMON_PREFIXES:
+                        if not domain.startswith(prefix):
+                            expanded.add(prefix + domain)
+                else:
+                    for prefix in COMMON_PREFIXES:
                         expanded.add(prefix + domain)
             return sorted(expanded)
         # Fallback to hard-coded default
@@ -1152,8 +1186,7 @@ class ForcedFocusDaemon:
         expanded = set()
         
         # Layer 1: Always allow common CDN/infrastructure domains
-        for cdn in CDN_INFRASTRUCTURE_DOMAINS:
-            expanded.add(cdn)
+        expanded.update(CDN_INFRASTRUCTURE_DOMAINS)
             
         # Add user domains and Layer 2 bundles
         for d in domains:
@@ -1207,7 +1240,7 @@ class ForcedFocusDaemon:
 
     def _build_blacklist_block(self) -> str:
         lines = [MARKER_BEGIN, "# Mode: BLACKLIST", f"# Expires: {self.session_expiry.isoformat()}"]
-        for domain in self.blocked_domains:
+        for domain in self.active_domains:
             lines.append(f"127.0.0.1\t{domain}")
             lines.append(f"::1\t\t{domain}")
         # Block DNS-over-HTTPS providers to prevent browser bypass
@@ -1465,7 +1498,8 @@ class ForcedFocusDaemon:
         self.hosts_hash = None
         self.session_expiry = None
         self.pending_unlock_at = None
-        self.blocked_domains = []
+        self.active_domains = []
+        self.active_domains_set = set(self.active_domains)
         self.session_base_domains = []
         self.original_dns = {}
         self.whitelist_resolved = {}
@@ -1502,7 +1536,6 @@ class ForcedFocusDaemon:
         
         Can be disabled via settings: {"aggressive_cache_clear": false}
         """
-        # LOW #4: Allow users to opt out of aggressive cache clearing
         if not self.settings.get("aggressive_cache_clear", True):
             logging.debug("Aggressive cache clearing disabled by settings.")
             return
@@ -1681,22 +1714,25 @@ class ForcedFocusDaemon:
 
     def _kill_vpns(self):
         """Terminate known VPN processes that could bypass host-file blocking."""
-        for proc in VPN_PROCESSES:
-            try:
-                # Targeted killall
-                subprocess.run(["killall", "-9", proc], capture_output=True, timeout=2)
-            except Exception:
-                pass
+        if not VPN_PROCESSES:
+            return
+        try:
+            # Targeted killall for all processes at once to reduce subprocess overhead
+            # Targeted killall
+            subprocess.run(["killall", "-9"] + VPN_PROCESSES, capture_output=True, timeout=2)
+        except Exception:
+            pass
 
     def _kill_restricted_apps(self):
         """Terminate restricted processes (VPNs, bypass browsers, tools) during active sessions."""
-        for proc in RESTRICTED_PROCESSES:
-            try:
-                subprocess.run(["killall", "-9", proc], capture_output=True, timeout=2)
-            except subprocess.TimeoutExpired:
-                pass
-            except OSError:
-                pass
+        if not RESTRICTED_PROCESSES:
+            return
+        try:
+            subprocess.run(["killall", "-9"] + RESTRICTED_PROCESSES, capture_output=True, timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        except OSError:
+            pass
 
     # ── Watchdog ──────────────────────────────────────────────────────────────
 
@@ -1738,11 +1774,11 @@ class ForcedFocusDaemon:
             if self.mode == "whitelist":
                 data["original_dns"] = self.original_dns
                 data["whitelist_resolved"] = self.whitelist_resolved
-                data["blocked_domains"] = self.blocked_domains
+                data["active_domains"] = self.active_domains
                 data["whitelist_count"] = getattr(self, "whitelist_count", 0)
                 data["whitelist_expanded_count"] = getattr(self, "whitelist_expanded_count", 0)
             else:
-                data["blocked_domains"] = self.blocked_domains
+                data["active_domains"] = self.active_domains
             data["session_base_domains"] = getattr(self, "session_base_domains", [])
                 
         try:
@@ -1927,6 +1963,17 @@ class ForcedFocusDaemon:
             return
 
         with self.lock:
+            # C1: Handle signal-driven re-enforce (flag set without lock)
+            if self._reenforce_flag:
+                self._reenforce_flag = False
+                logging.warning("Caught signal — setting re-enforce flag (deferred from handler).")
+                if self.active and not (self.session_type == "pomodoro" and self.pomo_phase == "break"):
+                    logging.info("Signal re-enforce: re-applying block rules.")
+                    try:
+                        self._enforce_current_mode()
+                    except Exception as exc:
+                        logging.error("Signal re-enforce failed: %s", exc)
+
             if not self.active:
                 return
 
@@ -1936,16 +1983,6 @@ class ForcedFocusDaemon:
             if self._wd_persist_counter >= 120:  # 120 * 250ms = 30s
                 self._wd_persist_counter = 0
                 self._persist_session_lock()
-
-            # C1: Handle signal-driven re-enforce (flag set without lock)
-            if self._reenforce_flag:
-                self._reenforce_flag = False
-                if not (self.session_type == "pomodoro" and self.pomo_phase == "break"):
-                    logging.info("Signal re-enforce: re-applying block rules.")
-                    try:
-                        self._enforce_current_mode()
-                    except Exception as exc:
-                        logging.error("Signal re-enforce failed: %s", exc)
 
             # Use monotonic time for duration checks (immune to clock changes)
             if now_mono >= self._mono_session_end:
@@ -2125,14 +2162,11 @@ class ForcedFocusDaemon:
             return {"status": "error", "message": f"Unknown action: {action}"}
 
     def _http_server(self):
-        # LOW #2: Determine web directory without mutating global state
-        local_web = Path(__file__).parent / "web"
-        web_dir = local_web if local_web.exists() else WEB_DIR
         try:
             server = EmbeddedHTTPServer((WEB_HOST, WEB_PORT), EmbeddedWebHandler)
             server.daemon_ref = self
-            server.web_dir = web_dir
-            logging.info("Web UI listening at http://%s:%d (serving from %s)", WEB_HOST, WEB_PORT, web_dir)
+            server.web_dir = WEB_DIR
+            logging.info("Web UI listening at http://%s:%d (serving from %s)", WEB_HOST, WEB_PORT, WEB_DIR)
             server.serve_forever()
         except Exception as exc:
             logging.error("HTTP server failed: %s", exc)
@@ -2153,7 +2187,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
             return True
         if origin in ("http://localhost:7070", "http://127.0.0.1:7070"):
             return True
-        if origin.startswith("chrome-extension://"):
+        if origin == "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc":
             return True
         return False
 
@@ -2167,7 +2201,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
 
     def _get_cors_origin(self) -> str:
         origin = self.headers.get("Origin")
-        if origin and (origin in ("http://localhost:7070", "http://127.0.0.1:7070") or origin.startswith("chrome-extension://")):
+        if origin and (origin in ("http://localhost:7070", "http://127.0.0.1:7070") or origin == "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc"):
             return origin
         return "http://127.0.0.1:7070"
 
@@ -2352,12 +2386,10 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-API-Token")
         self.end_headers()
 
-    # LOW #3: Explicitly deny unsupported HTTP methods
-    def do_PUT(self):
-        self._send_json({"status": "error", "message": "Method not allowed."}, 405)
-
-    def do_PATCH(self):
-        self._send_json({"status": "error", "message": "Method not allowed."}, 405)
+    def __getattr__(self, name):
+        if name.startswith("do_"):
+            return lambda: self._send_json({"status": "error", "message": "Method not allowed."}, 405)
+        raise AttributeError(name)
 
 
 def main():
