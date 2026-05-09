@@ -15,6 +15,8 @@ let pomoFocusMin = 25;
 let pomoBreakMin = 5;
 let pomoCycles = 4;
 
+let scheduleType = 'now'; // 'now', 'in', 'at'
+
 // ── DOM Elements ─────────────────────────────────────────────────────────────
 
 const $ = (sel) => document.querySelector(sel);
@@ -54,6 +56,14 @@ const els = {
     pomoStatus:       $('#pomoStatus'),
     pomoPhase:        $('#pomoPhase'),
     pomoCycleDisplay: $('#pomoCycleDisplay'),
+    scheduleCard:     $('#scheduleCard'),
+    scheduleInWrapper:$('#scheduleInWrapper'),
+    scheduleAtWrapper:$('#scheduleAtWrapper'),
+    scheduleIn:       $('#scheduleIn'),
+    scheduleAt:       $('#scheduleAt'),
+    upcomingSchedulesCard: $('#upcomingSchedulesCard'),
+    upcomingSchedulesList: $('#upcomingSchedulesList'),
+    upcomingSchedulesCount:$('#upcomingSchedulesCount'),
 };
 
 // ── API Helpers ──────────────────────────────────────────────────────────────
@@ -131,25 +141,95 @@ function stopCountdown() {
 
 function setActiveUI(status) {
     const active = status.active;
+    const schedules = status.schedules || [];
+    const hasSchedules = schedules.length > 0;
+    
+    // Determine the effective primary state for the UI
+    const isPrimaryScheduled = !active && hasSchedules;
+    const isFullyActive = active;
 
     // Status badge
-    els.statusBadge.classList.toggle('active', active);
-    els.statusBadge.querySelector('.status-text').textContent = active
-        ? status.mode.toUpperCase()
-        : 'Idle';
+    els.statusBadge.classList.toggle('active', isFullyActive || isPrimaryScheduled);
+    if (isPrimaryScheduled) {
+        els.statusBadge.querySelector('.status-text').textContent = 'SCHEDULED';
+    } else {
+        els.statusBadge.querySelector('.status-text').textContent = isFullyActive ? status.mode.toUpperCase() : 'Idle';
+    }
 
     // Timer ring
-    els.timerRing.classList.toggle('active', active);
+    els.timerRing.classList.toggle('active', isFullyActive || isPrimaryScheduled);
 
     // Mode & duration cards
-    els.modeCard.classList.toggle('disabled', active);
-    els.durationCard.classList.toggle('disabled', active);
-    els.sessionTypeCard.classList.toggle('disabled', active);
-    els.pomodoroCard.classList.toggle('disabled', active);
+    els.modeCard.classList.toggle('disabled', isFullyActive);
+    els.durationCard.classList.toggle('disabled', isFullyActive);
+    els.sessionTypeCard.classList.toggle('disabled', isFullyActive);
+    els.pomodoroCard.classList.toggle('disabled', isFullyActive);
+    els.scheduleCard.classList.toggle('disabled', isFullyActive);
 
     // Start/stop buttons
-    els.btnStart.classList.toggle('hidden', active);
-    els.btnStop.classList.toggle('hidden', !active);
+    els.btnStart.classList.toggle('hidden', isFullyActive);
+    els.btnStop.classList.toggle('hidden', !isFullyActive);
+
+    // Update Upcoming Schedules List
+    if (hasSchedules) {
+        els.upcomingSchedulesCard.classList.remove('hidden');
+        els.upcomingSchedulesCount.textContent = schedules.length;
+        els.upcomingSchedulesList.innerHTML = '';
+        schedules.forEach(sch => {
+            const li = document.createElement('li');
+            li.className = 'calendar-item';
+            
+            let monthStr = "---";
+            let dayStr = "--";
+            let timeStr = sch.starts_at;
+            
+            try {
+                const parts = sch.starts_at.split(' ');
+                if (parts.length >= 3) {
+                    const dateParts = parts[0].split('-');
+                    if (dateParts.length === 3) {
+                        const m = parseInt(dateParts[1], 10);
+                        const d = parseInt(dateParts[2], 10);
+                        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                        monthStr = monthNames[m - 1];
+                        dayStr = d.toString();
+                        timeStr = `${parts[1]} ${parts[2]}`;
+                    }
+                }
+            } catch(e) {}
+            
+            li.innerHTML = `
+                <div class="cal-date">
+                    <span class="cal-month">${monthStr}</span>
+                    <span class="cal-day">${dayStr}</span>
+                </div>
+                <div class="cal-details">
+                    <div class="cal-time">${timeStr}</div>
+                    <div class="cal-title">${sch.mode.toUpperCase()} <span class="cal-type">• ${sch.session_type}</span></div>
+                    <div class="cal-duration">⏳ ${sch.duration_minutes} mins</div>
+                </div>
+            `;
+            els.upcomingSchedulesList.appendChild(li);
+        });
+    } else {
+        els.upcomingSchedulesCard.classList.add('hidden');
+        els.upcomingSchedulesList.innerHTML = '';
+    }
+
+    // If it's just scheduled (not yet blocking)
+    if (isPrimaryScheduled) {
+        const nextSch = schedules[0];
+        els.timerRing.classList.remove('break');
+        els.modeDisplay.textContent = `Mode: ${nextSch.mode}`;
+        els.expiresDisplay.textContent = `Starts at: ${nextSch.starts_at}`;
+        els.pomoStatus.classList.add('hidden');
+        els.timerLabel.textContent = 'STARTING IN';
+        els.unlockInfo.classList.add('hidden');
+        
+        totalSessionSeconds = 0; // disables progress ring animation
+        startCountdown(nextSch.starting_in_seconds || 0);
+        return;
+    }
 
     // Mode & expires info
     if (active) {
@@ -260,11 +340,31 @@ function renderDomainList(container, domains, listName) {
 
 function initEvents() {
     // Mode toggle
-    $$('.mode-btn:not(.session-type-btn)').forEach(btn => {
+    $$('.mode-btn:not(.session-type-btn):not(.schedule-type-btn)').forEach(btn => {
         btn.addEventListener('click', () => {
-            $$('.mode-btn:not(.session-type-btn)').forEach(b => b.classList.remove('active'));
+            $$('.mode-btn:not(.session-type-btn):not(.schedule-type-btn)').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentMode = btn.dataset.mode;
+        });
+    });
+
+    // Schedule type toggle
+    $$('.schedule-type-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            $$('.schedule-type-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            scheduleType = btn.dataset.type;
+            
+            if (scheduleType === 'in') {
+                els.scheduleInWrapper.classList.remove('hidden');
+                els.scheduleAtWrapper.classList.add('hidden');
+            } else if (scheduleType === 'at') {
+                els.scheduleInWrapper.classList.add('hidden');
+                els.scheduleAtWrapper.classList.remove('hidden');
+            } else {
+                els.scheduleInWrapper.classList.add('hidden');
+                els.scheduleAtWrapper.classList.add('hidden');
+            }
         });
     });
 
@@ -348,6 +448,22 @@ function initEvents() {
             const duration = selectedDuration;
             totalSessionSeconds = duration * 60;
             payload = { duration, mode: currentMode, session_type: 'standard' };
+        }
+        
+        if (scheduleType === 'in') {
+            const min = parseInt(els.scheduleIn.value);
+            if (!min || min < 1) {
+                showToast('Please enter a valid number of minutes.');
+                return;
+            }
+            payload.schedule_in = min;
+        } else if (scheduleType === 'at') {
+            const time = els.scheduleAt.value;
+            if (!time) {
+                showToast('Please select a valid date and time.');
+                return;
+            }
+            payload.schedule_at = time;
         }
         
         els.btnStart.textContent = '⏳ Starting...';

@@ -253,6 +253,7 @@ class ForcedFocusDaemon:
         self._mono_unlock_end: float = 0.0
         self._mono_pomo_phase_end: float = 0.0
         self._reenforce_flag = False  # Set by signal handler, handled by watchdog
+        self.schedules: list = []
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -405,6 +406,26 @@ class ForcedFocusDaemon:
             self._cleanup_session()
             return
 
+        if data.get("schedules"):
+            try:
+                for sch in data["schedules"]:
+                    sch_time = datetime.fromisoformat(sch["start_time"])
+                    self.schedules.append({
+                        "start_time": sch_time,
+                        "end_time": datetime.fromisoformat(sch["end_time"]),
+                        "cmd": sch["cmd"]
+                    })
+                self.schedules.sort(key=lambda x: x["start_time"])
+                if not data.get("expiry"):
+                    logging.info("Restored %d scheduled sessions.", len(self.schedules))
+                    return
+            except Exception as exc:
+                logging.error("Failed to restore scheduled sessions: %s", exc)
+                self.schedules = []
+
+        if not data.get("expiry"):
+            return
+
         wall_remaining = (expiry - datetime.now()).total_seconds()
         self.total_duration_seconds = data.get("duration_minutes", 120) * 60
         
@@ -496,11 +517,91 @@ class ForcedFocusDaemon:
         if mode not in ("blacklist", "whitelist"):
             return {"status": "error", "message": "Invalid mode."}
         with self.lock:
+            # Parse scheduling arguments
+            schedule_in = cmd.get("schedule_in_minutes")
+            schedule_at = cmd.get("schedule_at_time")
+            start_time = None
+            if schedule_in:
+                start_time = datetime.now() + timedelta(minutes=int(schedule_in))
+            elif schedule_at:
+                try:
+                    now = datetime.now()
+                    formats = [
+                        "%Y-%m-%dT%H:%M",       # HTML5 datetime-local
+                        "%Y-%m-%d %H:%M",       # CLI basic
+                        "%Y-%m-%d %I:%M %p",    # CLI AM/PM
+                        "%Y-%m-%d %I:%M%p",
+                        "%I:%M %p",             # Just time AM/PM
+                        "%I:%M%p",
+                        "%H:%M",                # Just time 24h
+                    ]
+                    for fmt in formats:
+                        try:
+                            parsed = datetime.strptime(schedule_at.strip(), fmt)
+                            if parsed.year == 1900:
+                                start_time = now.replace(hour=parsed.hour, minute=parsed.minute, second=0, microsecond=0)
+                                if start_time <= now:
+                                    start_time += timedelta(days=1)
+                            else:
+                                start_time = parsed
+                            break
+                        except ValueError:
+                            continue
+                            
+                    if not start_time:
+                        return {"status": "error", "message": "Invalid date/time format. Use 'YYYY-MM-DD HH:MM AM/PM' or 'HH:MM AM/PM'."}
+                        
+                except Exception as exc:
+                    return {"status": "error", "message": f"Failed to parse schedule time: {exc}"}
+
+            duration_minutes = cmd.get("duration_minutes", 120)
+            try:
+                duration_minutes = int(duration_minutes)
+            except ValueError:
+                return {"status": "error", "message": "Duration must be an integer."}
+
+            if duration_minutes <= 0:
+                return {"status": "error", "message": "Duration must be > 0."}
+
+            is_scheduling = start_time and start_time > datetime.now()
+            
+            # Check overlap if active
             if self.active:
-                rem = (self.session_expiry - datetime.now()).total_seconds()
+                if not is_scheduling:
+                    rem = (self.session_expiry - datetime.now()).total_seconds()
+                    return {
+                        "status": "already_active",
+                        "message": f"Session active. {int(rem/60)}m {int(rem%60)}s remaining.",
+                    }
+                if start_time < self.session_expiry:
+                    return {"status": "error", "message": f"Schedule overlaps with active session (ends at {self.session_expiry.strftime('%H:%M')})."}
+                    
+            if is_scheduling:
+                end_time = start_time + timedelta(minutes=duration_minutes)
+                
+                # Check overlap with existing schedules
+                for sch in self.schedules:
+                    if max(start_time, sch["start_time"]) < min(end_time, sch["end_time"]):
+                        return {"status": "error", "message": f"Schedule overlaps with an existing schedule (starts at {sch['start_time'].strftime('%m-%d %H:%M')})."}
+                        
+                sch_cmd = cmd.copy()
+                sch_cmd.pop("schedule_in_minutes", None)
+                sch_cmd.pop("schedule_at_time", None)
+                
+                self.schedules.append({
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "cmd": sch_cmd
+                })
+                self.schedules.sort(key=lambda x: x["start_time"])
+                self._persist_session_lock()
+                
+                logging.info("Session scheduled to start at %s.", start_time.strftime("%Y-%m-%d %I:%M %p"))
                 return {
-                    "status": "already_active",
-                    "message": f"Session active. {int(rem/60)}m {int(rem%60)}s remaining.",
+                    "status": "ok",
+                    "message": f"Session scheduled to start at {start_time.strftime('%Y-%m-%d %I:%M %p')}.",
+                    "scheduled": True,
+                    "starts_at": start_time.strftime("%Y-%m-%d %I:%M %p")
                 }
 
             self.mode = mode
@@ -539,6 +640,14 @@ class ForcedFocusDaemon:
                 "pomo_phase_expiry": self.pomo_phase_expiry.isoformat() if self.pomo_phase_expiry else None,
                 "mono_elapsed": 0.0,
                 "last_persist_wall": datetime.now().isoformat(),
+                "schedules": [
+                    {
+                        "start_time": sch["start_time"].isoformat(),
+                        "end_time": sch["end_time"].isoformat(),
+                        "cmd": sch["cmd"]
+                    }
+                    for sch in self.schedules
+                ]
             }
             self.remaining_seconds = duration_minutes * 60
             self.pending_unlock_seconds = 0
@@ -618,8 +727,26 @@ class ForcedFocusDaemon:
 
     def _get_status(self) -> dict:
         with self.lock:
+            schedules_res = []
+            for sch in self.schedules:
+                schedules_res.append({
+                    "starts_at": sch["start_time"].strftime("%Y-%m-%d %I:%M %p"),
+                    "starting_in_seconds": max(0, int((sch["start_time"] - datetime.now()).total_seconds())),
+                    "mode": sch["cmd"].get("mode", "blacklist"),
+                    "session_type": sch["cmd"].get("session_type", "standard"),
+                    "duration_minutes": sch["cmd"].get("duration_minutes", 120),
+                })
+                
             if not self.active:
-                return {"status": "ok", "active": False, "mode": None, "message": "Idle."}
+                return {
+                    "status": "ok", 
+                    "active": False, 
+                    "state": "idle",
+                    "mode": None, 
+                    "message": "Idle.",
+                    "schedules": schedules_res
+                }
+            
             # C3: Use monotonic time for all remaining-seconds fields
             now_mono = get_continuous_time()
             rem = int(max(0, self._mono_session_end - now_mono))
@@ -634,6 +761,7 @@ class ForcedFocusDaemon:
                 "pending_unlock": self.pending_unlock_at.strftime("%H:%M:%S") if self.pending_unlock_at else None,
                 "pending_unlock_seconds": int(max(0, self._mono_unlock_end - now_mono)) if self._mono_unlock_end > 0 else None,
                 "session_type": self.session_type,
+                "schedules": schedules_res
             }
             if self.session_type == "pomodoro":
                 result["pomo_phase"] = self.pomo_phase
@@ -909,6 +1037,7 @@ class ForcedFocusDaemon:
         self._mono_pomo_phase_end = 0.0
         self._passphrase_attempts = 0
         self._reenforce_flag = False
+        # Do NOT clear schedules on session cleanup!
         logging.info("Session ended. Hosts restored. DNS flushed.")
 
     @staticmethod
@@ -923,34 +1052,43 @@ class ForcedFocusDaemon:
 
     def _persist_session_lock(self):
         """Re-create session.lock from in-memory state."""
-        if not self.active or not self.session_expiry:
-            return
-            
         data = {
-            "started": (self.session_expiry - timedelta(seconds=self.total_duration_seconds)).isoformat(),
-            "expiry": self.session_expiry.isoformat(),
-            "duration_minutes": self.total_duration_seconds // 60,
-            "mode": self.mode,
-            "session_type": self.session_type,
-            "mono_elapsed": get_continuous_time() - (self._mono_session_end - self.total_duration_seconds),
-            "last_persist_wall": datetime.now().isoformat(),
+            "schedules": [
+                {
+                    "start_time": sch["start_time"].isoformat(),
+                    "end_time": sch["end_time"].isoformat(),
+                    "cmd": sch["cmd"]
+                }
+                for sch in self.schedules
+            ]
         }
-        if self.pending_unlock_at:
-            data["pending_unlock_at"] = self.pending_unlock_at.isoformat()
-            
-        if self.session_type == "pomodoro":
+        if self.active and self.session_expiry:
             data.update({
-                "pomo_focus_minutes": self.pomo_focus_minutes,
-                "pomo_break_minutes": self.pomo_break_minutes,
-                "pomo_total_cycles": self.pomo_total_cycles,
-                "pomo_current_cycle": self.pomo_current_cycle,
-                "pomo_phase": self.pomo_phase,
-                "pomo_phase_expiry": self.pomo_phase_expiry.isoformat() if self.pomo_phase_expiry else None,
+                "started": (self.session_expiry - timedelta(seconds=self.total_duration_seconds)).isoformat(),
+                "expiry": self.session_expiry.isoformat(),
+                "duration_minutes": self.total_duration_seconds // 60,
+                "mode": self.mode,
+                "session_type": self.session_type,
+                "mono_elapsed": get_continuous_time() - (self._mono_session_end - self.total_duration_seconds),
+                "last_persist_wall": datetime.now().isoformat(),
             })
-        if self.mode == "whitelist":
-            data["original_dns"] = self.original_dns
-            data["whitelist_resolved"] = self.whitelist_resolved
-            data["blocked_domains"] = self.blocked_domains
+            if self.pending_unlock_at:
+                data["pending_unlock_at"] = self.pending_unlock_at.isoformat()
+                
+            if self.session_type == "pomodoro":
+                data.update({
+                    "pomo_focus_minutes": self.pomo_focus_minutes,
+                    "pomo_break_minutes": self.pomo_break_minutes,
+                    "pomo_total_cycles": self.pomo_total_cycles,
+                    "pomo_current_cycle": self.pomo_current_cycle,
+                    "pomo_phase": self.pomo_phase,
+                    "pomo_phase_expiry": self.pomo_phase_expiry.isoformat() if self.pomo_phase_expiry else None,
+                })
+            if self.mode == "whitelist":
+                data["original_dns"] = self.original_dns
+                data["whitelist_resolved"] = self.whitelist_resolved
+                data["blocked_domains"] = self.blocked_domains
+                
         try:
             SESSION_LOCK.write_text(json.dumps(data))
             logging.info("session.lock re-created from memory.")
@@ -982,9 +1120,27 @@ class ForcedFocusDaemon:
         persist_counter = 0
         while True:
             time.sleep(WATCHDOG_INTERVAL)
+            cmd_to_start = None
+            
+            with self.lock:
+                if getattr(self, "schedules", []):
+                    # Check if the first schedule (sorted by start_time) is ready
+                    if datetime.now() >= self.schedules[0]["start_time"]:
+                        sch = self.schedules.pop(0)
+                        cmd_to_start = sch["cmd"]
+                        self._persist_session_lock()
+                        if self.active:
+                            self.active = False # Reset to allow fresh start
+
+            if cmd_to_start:
+                logging.info("Scheduled time reached. Automatically starting session.")
+                self._start_session(cmd_to_start)
+                continue
+
             with self.lock:
                 if not self.active:
                     continue
+
                 now_mono = get_continuous_time()
                 
                 persist_counter += 1
@@ -1266,6 +1422,10 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
                 "break_minutes": body.get("break_minutes", 5),
                 "cycles": body.get("cycles", 4),
             }
+            if "schedule_in" in body:
+                cmd["schedule_in_minutes"] = body["schedule_in"]
+            if "schedule_at" in body:
+                cmd["schedule_at_time"] = body["schedule_at"]
             self._send_json(self.server.daemon_ref._start_session(cmd))
 
         elif path == "/api/stop":

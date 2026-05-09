@@ -101,6 +101,35 @@
                 </div>
             </div>
 
+            <!-- Scheduling -->
+            <div class="card" id="scheduleCard">
+                <h2 class="card-title">Schedule</h2>
+                <div class="mode-toggle" style="margin-bottom: 12px;">
+                    <button class="mode-btn schedule-type-btn active" data-type="now">
+                        <span class="mode-icon">⚡</span>
+                        <span class="mode-name">Now</span>
+                    </button>
+                    <button class="mode-btn schedule-type-btn" data-type="in">
+                        <span class="mode-icon">⏳</span>
+                        <span class="mode-name">Later</span>
+                    </button>
+                    <button class="mode-btn schedule-type-btn" data-type="at">
+                        <span class="mode-icon">📅</span>
+                        <span class="mode-name">Time</span>
+                    </button>
+                </div>
+                <div class="schedule-inputs">
+                    <div id="scheduleInWrapper" class="hidden">
+                        <label>Start after (minutes):</label>
+                        <input type="number" id="scheduleIn" min="1" max="1440" placeholder="e.g. 15">
+                    </div>
+                    <div id="scheduleAtWrapper" class="hidden">
+                        <label>Start on date & time:</label>
+                        <input type="datetime-local" id="scheduleAt">
+                    </div>
+                </div>
+            </div>
+
             <!-- Pomodoro Config (hidden by default) -->
             <div class="card hidden" id="pomodoroCard">
                 <h2 class="card-title">🍅 Pomodoro Settings</h2>
@@ -136,7 +165,18 @@
                 </button>
             </div>
             <div class="unlock-info hidden" id="unlockInfo">
-                <p>⏱ Unlock pending — blocking continues for 20 more minutes</p>
+                <p>⏱ Unlock pending — releases at 12:00 (10m left)</p>
+            </div>
+
+            <!-- Upcoming Schedules -->
+            <div class="card hidden" id="upcomingSchedulesCard" style="margin-top: 20px;">
+                <div class="list-header" style="margin-bottom: 12px;">
+                    <h2 class="card-title" style="margin-bottom: 0;">⏳ Upcoming Schedules</h2>
+                    <span class="list-count" id="upcomingSchedulesCount">0</span>
+                </div>
+                <ul class="domain-list" id="upcomingSchedulesList">
+                    <!-- Populated by JS -->
+                </ul>
             </div>
         </section>
 
