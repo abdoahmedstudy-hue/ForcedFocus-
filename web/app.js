@@ -22,8 +22,6 @@ let selectedGroups = new Set();
 let apiToken = ""; // Per-launch API token for mutation auth
 let lastActiveState = false;
 let sessionSnapshot = { intent: "", tasks: [] };
-let _lastIntent = null;
-let _lastTasksJSON = null;
 
 // ── HTML Sanitization ────────────────────────────────────────────────────────
 
@@ -413,25 +411,15 @@ function setActiveUI(status) {
 
     if (intentContainer) {
       if (status.intent) {
-        if (intentContainer.style.display !== "block") {
-          intentContainer.style.display = "block";
-        }
-        if (intentDisplay && _lastIntent !== status.intent) {
+        intentContainer.style.display = "block";
+        if (intentDisplay) {
           intentDisplay.textContent = status.intent;
-          _lastIntent = status.intent;
         }
-        
-        const tasksJSON = JSON.stringify(status.intent_tasks || []);
-        if (intentTasksContainer && _lastTasksJSON !== tasksJSON) {
+        if (intentTasksContainer) {
           renderIntentTasks(intentTasksContainer, status.intent_tasks || []);
-          _lastTasksJSON = tasksJSON;
         }
       } else {
-        if (intentContainer.style.display !== "none") {
-          intentContainer.style.display = "none";
-        }
-        _lastIntent = null;
-        _lastTasksJSON = null;
+        intentContainer.style.display = "none";
       }
     }
     // Mode & expires info
