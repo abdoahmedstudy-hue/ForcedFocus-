@@ -117,14 +117,32 @@
             Stay focused — you've got this! 💪
         </p>
         <div class="badge">⚡ ForcedFocus Active</div>
-        <audio id="blockedSound" src="sounds/Blocked site open.mp3"></audio>
     </div>
     <script>
         const params = new URLSearchParams(window.location.search);
         const domain = params.get('domain') || 'this site';
         document.getElementById('blockedDomain').textContent = domain;
         document.title = `Blocked: ${domain} — ForcedFocus`;
-        document.getElementById('blockedSound').play().catch(e => console.log('Audio playback prevented'));
+
+        // T7: Connect timer to background script
+        function updateTimer() {
+            if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+                chrome.runtime.sendMessage({action: 'getTimeRemaining'}, (response) => {
+                    if (chrome.runtime.lastError) return; // Extension context invalidated
+                    if (response && response.remaining > 0) {
+                        const h = Math.floor(response.remaining / 3600);
+                        const m = Math.floor((response.remaining % 3600) / 60);
+                        const s = response.remaining % 60;
+                        const badge = document.querySelector('.badge');
+                        if (badge) {
+                            badge.textContent = `⚡ ${h > 0 ? h + ':' : ''}${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')} remaining`;
+                        }
+                    }
+                });
+            }
+        }
+        updateTimer();
+        setInterval(updateTimer, 1000);
     </script>
 </body>
 </html>

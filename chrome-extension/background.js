@@ -229,3 +229,24 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 // Also run immediately on service worker start
 syncBlockRules();
+
+// T8: Handle messages from popup/content scripts
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'getTimeRemaining') {
+        fetch(`${API}/api/status`, { signal: AbortSignal.timeout(2000) })
+            .then(res => res.json())
+            .then(data => {
+                if (data.active) {
+                    sendResponse({
+                        remaining: data.remaining_seconds || 0,
+                        phase: data.pomo_phase || null,
+                        phaseRemaining: data.pomo_phase_remaining || null
+                    });
+                } else {
+                    sendResponse({ remaining: 0 });
+                }
+            })
+            .catch(() => sendResponse({ remaining: 0 }));
+        return true; // Keep message channel open for async response
+    }
+});

@@ -382,9 +382,6 @@ class ForcedFocusDaemon:
         return True
 
     def _cmd_add_domain(self, cmd: dict) -> dict:
-        with self.lock:
-            if self.active:
-                return {"status": "error", "message": "Cannot modify lists during active session."}
         list_name = cmd.get("list", "blacklist")
         domain = cmd.get("domain", "").strip().lower()
         if not self._validate_domain(domain):
@@ -393,6 +390,8 @@ class ForcedFocusDaemon:
             return {"status": "error", "message": "Invalid list name."}
 
         with self.lock:
+            if self.active:
+                return {"status": "error", "message": "Cannot modify lists during active session."}
             lists = self._load_lists()
             if domain not in lists[list_name]:
                 lists[list_name].append(domain)
@@ -401,15 +400,14 @@ class ForcedFocusDaemon:
 
     def _cmd_add_domains(self, cmd: dict) -> dict:
         """Bulk-add multiple domains to a list."""
-        with self.lock:
-            if self.active:
-                return {"status": "error", "message": "Cannot modify lists during active session."}
         list_name = cmd.get("list", "blacklist")
         domains = cmd.get("domains", [])
         if list_name not in ("blacklist", "whitelist"):
             return {"status": "error", "message": "Invalid list name."}
 
         with self.lock:
+            if self.active:
+                return {"status": "error", "message": "Cannot modify lists during active session."}
             lists = self._load_lists()
             added = 0
             for d in domains:
@@ -421,15 +419,14 @@ class ForcedFocusDaemon:
             return {"status": "ok", "message": f"Added {added} domains to {list_name}.", "lists": lists}
 
     def _cmd_remove_domain(self, cmd: dict) -> dict:
-        with self.lock:
-            if self.active:
-                return {"status": "error", "message": "Cannot modify lists during active session."}
         list_name = cmd.get("list", "blacklist")
         domain = cmd.get("domain", "").strip().lower()
         if list_name not in ("blacklist", "whitelist"):
             return {"status": "error", "message": "Invalid list name."}
 
         with self.lock:
+            if self.active:
+                return {"status": "error", "message": "Cannot modify lists during active session."}
             lists = self._load_lists()
             if domain in lists[list_name]:
                 lists[list_name].remove(domain)
@@ -444,10 +441,46 @@ class ForcedFocusDaemon:
             return
         try:
             data = json.loads(SESSION_LOCK.read_text())
-            expiry = datetime.fromisoformat(data["expiry"])
-        except (json.JSONDecodeError, KeyError, ValueError) as exc:
+        except (json.JSONDecodeError, ValueError) as exc:
             logging.error("Corrupt session.lock (%s). Removing.", exc)
             SESSION_LOCK.unlink(missing_ok=True)
+            return
+
+        # Restore schedules first (they exist independently of active sessions)
+        if data.get("schedules"):
+            try:
+                for sch in data["schedules"]:
+                    sch_time = datetime.fromisoformat(sch["start_time"])
+                    # Skip schedules whose end_time has already passed
+                    end_time = datetime.fromisoformat(sch["end_time"])
+                    if end_time <= datetime.now():
+                        continue
+                    self.schedules.append({
+                        "start_time": sch_time,
+                        "end_time": end_time,
+                        "cmd": sch["cmd"]
+                    })
+                self.schedules.sort(key=lambda x: x["start_time"])
+                if self.schedules:
+                    logging.info("Restored %d scheduled sessions.", len(self.schedules))
+            except Exception as exc:
+                logging.error("Failed to restore scheduled sessions: %s", exc)
+                self.schedules = []
+
+        # If no active session data, we're done (schedule-only lockfile)
+        if not data.get("expiry"):
+            if self.schedules:
+                self._persist_session_lock()
+            return
+
+        try:
+            expiry = datetime.fromisoformat(data["expiry"])
+        except (KeyError, ValueError) as exc:
+            logging.error("Invalid expiry in session.lock (%s). Removing active session data.", exc)
+            if self.schedules:
+                self._persist_session_lock()
+            else:
+                SESSION_LOCK.unlink(missing_ok=True)
             return
 
         if datetime.now() >= expiry:
@@ -456,26 +489,6 @@ class ForcedFocusDaemon:
             if self.mode == "whitelist":
                 self.original_dns = data.get("original_dns", {})
             self._cleanup_session()
-            return
-
-        if data.get("schedules"):
-            try:
-                for sch in data["schedules"]:
-                    sch_time = datetime.fromisoformat(sch["start_time"])
-                    self.schedules.append({
-                        "start_time": sch_time,
-                        "end_time": datetime.fromisoformat(sch["end_time"]),
-                        "cmd": sch["cmd"]
-                    })
-                self.schedules.sort(key=lambda x: x["start_time"])
-                if not data.get("expiry"):
-                    logging.info("Restored %d scheduled sessions.", len(self.schedules))
-                    return
-            except Exception as exc:
-                logging.error("Failed to restore scheduled sessions: %s", exc)
-                self.schedules = []
-
-        if not data.get("expiry"):
             return
 
         wall_remaining = (expiry - datetime.now()).total_seconds()
@@ -606,14 +619,7 @@ class ForcedFocusDaemon:
                 except Exception as exc:
                     return {"status": "error", "message": f"Failed to parse schedule time: {exc}"}
 
-            duration_minutes = cmd.get("duration_minutes", 120)
-            try:
-                duration_minutes = int(duration_minutes)
-            except ValueError:
-                return {"status": "error", "message": "Duration must be an integer."}
-
-            if duration_minutes <= 0:
-                return {"status": "error", "message": "Duration must be > 0."}
+            # duration_minutes already validated before lock acquisition
 
             is_scheduling = start_time and start_time > datetime.now()
             
@@ -677,6 +683,12 @@ class ForcedFocusDaemon:
                 self.pomo_phase = "focus"
                 self.pomo_phase_expiry = datetime.now() + timedelta(minutes=self.pomo_focus_minutes)
                 self._mono_pomo_phase_end = now_mono + (self.pomo_focus_minutes * 60)
+                # S7: Override duration with exact Pomodoro calculation to prevent timer divergence
+                pomo_total = (self.pomo_focus_minutes + self.pomo_break_minutes) * self.pomo_total_cycles
+                duration_minutes = pomo_total
+                self.total_duration_seconds = pomo_total * 60
+                self.session_expiry = datetime.now() + timedelta(minutes=pomo_total)
+                self._mono_session_end = now_mono + (pomo_total * 60)
 
             session_data = {
                 "started": datetime.now().isoformat(),
@@ -845,9 +857,9 @@ class ForcedFocusDaemon:
             expanded = set()
             for d in bl:
                 domain = d.strip().lower()
-                # Auto-append .com if no TLD present (user shortcut)
+                # L4: Skip domains without a TLD (validated at input time)
                 if "." not in domain:
-                    domain += ".com"
+                    continue
                 
                 expanded.add(domain)
                 
@@ -1421,7 +1433,7 @@ class ForcedFocusDaemon:
                 )
                 
                 if dns_result.returncode != 0:
-                    logging.warning("Failed to get DNS for service '%s': %s", svc, dns_result.stderr.decode() if dns_result.stderr else "unknown error")
+                    logging.warning("Failed to get DNS for service '%s': %s", svc, dns_result.stderr if dns_result.stderr else "unknown error")
                     continue
                     
                 current_dns = dns_result.stdout.strip()
@@ -1460,7 +1472,9 @@ class ForcedFocusDaemon:
                         cmd_to_start = sch["cmd"]
                         self._persist_session_lock()
                         if self.active:
-                            self.active = False # Reset to allow fresh start
+                            # L1: Properly cleanup the active session before starting the scheduled one
+                            logging.info("Active session being replaced by scheduled session. Cleaning up.")
+                            self._cleanup_session()
 
             if cmd_to_start:
                 logging.info("Scheduled time reached. Automatically starting session.")
@@ -1713,6 +1727,8 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
+        # S9: Allow Chrome extension to load static assets (sounds, etc.)
+        self.send_header("Access-Control-Allow-Origin", self._get_cors_origin())
         self.end_headers()
         self.wfile.write(body)
 

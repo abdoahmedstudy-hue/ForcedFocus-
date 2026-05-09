@@ -19,10 +19,19 @@ const $$ = (s) => document.querySelectorAll(s);
 // ── API ──────────────────────────────────────────────────────────────────────
 
 async function api(method, path, body = null) {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    const opts = {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(5000)
+    };
     if (body) opts.body = JSON.stringify(body);
-    const res = await fetch(API + path, opts);
-    return await res.json();
+    try {
+        const res = await fetch(API + path, opts);
+        return await res.json();
+    } catch (err) {
+        console.error('[ForcedFocus] API error:', err.message);
+        return { status: 'error', message: 'Server unreachable.' };
+    }
 }
 
 async function checkServer() {

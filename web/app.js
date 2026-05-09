@@ -71,9 +71,6 @@ const els = {
     pomoBreak:        $('#pomoBreak'),
     pomoCycles:       $('#pomoCycles'),
     pomoSummary:      $('#pomoSummary'),
-    pomoStatus:       $('#pomoStatus'),
-    pomoPhase:        $('#pomoPhase'),
-    pomoCycleDisplay: $('#pomoCycleDisplay'),
     scheduleCard:     $('#scheduleCard'),
     scheduleInWrapper:$('#scheduleInWrapper'),
     scheduleAtWrapper:$('#scheduleAtWrapper'),
@@ -614,8 +611,6 @@ function extractDomain(input) {
     d = d.split('/')[0].split('?')[0].split('#')[0];
     // Strip port
     d = d.split(':')[0];
-    // Strip www.
-    d = d.replace(/^www\./, '');
     // Strip wildcard characters (e.g., *.example.com → example.com, example.com* → example.com)
     d = d.replace(/^\*\.?/, '').replace(/\*$/, '');
     return d;
@@ -679,6 +674,14 @@ async function init() {
     await refreshStatus();
     await refreshLists();
     await loadSettings();
+
+    // S10: Set min datetime to now, preventing past date selection
+    if (els.scheduleAt) {
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        const minVal = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+        els.scheduleAt.min = minVal;
+    }
 
     // Poll status every 2 seconds
     pollInterval = setInterval(refreshStatus, 2000);

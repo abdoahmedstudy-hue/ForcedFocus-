@@ -252,9 +252,53 @@ function initEvents() {
 
     els.btnStop.addEventListener('click', async () => {
         AudioManager.play('unlock');
-        // Redirect to full UI for unlock passphrase
-        window.open('http://127.0.0.1:7070', '_blank');
+        // S3: Show inline passphrase dialog instead of opening browser
+        const dialog = document.getElementById('unlockDialog');
+        if (dialog) {
+            dialog.classList.remove('hidden');
+            const input = document.getElementById('unlockPassphrase');
+            if (input) { input.value = ''; input.focus(); }
+            const errEl = document.getElementById('unlockError');
+            if (errEl) errEl.classList.add('hidden');
+        }
     });
+
+    // S3: Inline unlock dialog handlers
+    const btnUnlockConfirm = document.getElementById('btnUnlockConfirm');
+    const btnUnlockCancel = document.getElementById('btnUnlockCancel');
+    const unlockPassphrase = document.getElementById('unlockPassphrase');
+
+    if (btnUnlockConfirm) {
+        btnUnlockConfirm.addEventListener('click', async () => {
+            const key = unlockPassphrase.value;
+            const errEl = document.getElementById('unlockError');
+            if (!key) {
+                errEl.textContent = 'Enter passphrase.';
+                errEl.classList.remove('hidden');
+                return;
+            }
+            const res = await api('POST', '/api/stop', { key });
+            if (res.status === 'pending' || res.status === 'ok') {
+                document.getElementById('unlockDialog').classList.add('hidden');
+                refresh();
+            } else {
+                errEl.textContent = res.message || 'Invalid passphrase.';
+                errEl.classList.remove('hidden');
+            }
+        });
+    }
+
+    if (btnUnlockCancel) {
+        btnUnlockCancel.addEventListener('click', () => {
+            document.getElementById('unlockDialog').classList.add('hidden');
+        });
+    }
+
+    if (unlockPassphrase) {
+        unlockPassphrase.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && btnUnlockConfirm) btnUnlockConfirm.click();
+        });
+    }
 }
 
 let globalPollInterval = null;
@@ -284,4 +328,8 @@ window.onPopoverHide = () => {
 
 document.addEventListener('DOMContentLoaded', () => {
     initEvents();
+    // S8: Load settings and refresh status immediately, don't wait for onPopoverShow
+    loadSettings();
+    refresh();
+    globalPollInterval = setInterval(refresh, 2000);
 });
