@@ -40,6 +40,7 @@ def send_command(cmd: dict) -> dict:
         sock.settimeout(10)
         sock.connect(SOCK_PATH)
         sock.sendall(json.dumps(cmd).encode("utf-8"))
+        sock.shutdown(socket.SHUT_WR)  # Signal end of message
         # Receive full response (may span multiple packets)
         chunks = []
         while True:
@@ -70,14 +71,29 @@ def send_command(cmd: dict) -> dict:
 
 def cmd_start(args):
     """Start a time-bound blocking session."""
-    duration = args.duration
     mode = args.mode
+    session_type = args.session_type
+    
+    if session_type == "pomodoro":
+        duration = (args.focus + args.break_time) * args.cycles
+    else:
+        duration = args.duration
+
     if duration <= 0:
         print("✗ Duration must be a positive number of minutes.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"⏳ Starting {mode} session for {duration} minutes...")
-    resp = send_command({"action": "start", "duration_minutes": duration, "mode": mode})
+    print(f"⏳ Starting {mode} session ({session_type}) for {duration} minutes...")
+    payload = {
+        "action": "start", 
+        "duration_minutes": duration, 
+        "mode": mode,
+        "session_type": session_type,
+        "focus_minutes": args.focus,
+        "break_minutes": args.break_time,
+        "cycles": args.cycles
+    }
+    resp = send_command(payload)
 
     status = resp.get("status")
     msg    = resp.get("message", "")
@@ -135,14 +151,25 @@ def cmd_status(_args):
     rem_sec   = rem_secs % 60
     count     = resp.get("domains_count", 0)
     pending   = resp.get("pending_unlock")
+    session_type = resp.get("session_type", "standard")
 
     print("━" * 50)
     print(f"  ● ForcedFocus — ACTIVE ({mode.upper()})")
     print("━" * 50)
     print(f"  Mode            : {mode}")
+    print(f"  Type            : {session_type.capitalize()}")
+    if session_type == "pomodoro":
+        phase = resp.get("pomo_phase", "?")
+        cycle = resp.get("pomo_current_cycle", "?")
+        total_cycles = resp.get("pomo_total_cycles", "?")
+        phase_rem = resp.get("pomo_phase_remaining", 0)
+        p_min, p_sec = phase_rem // 60, phase_rem % 60
+        print(f"  Phase           : {phase.upper()} (Cycle {cycle}/{total_cycles})")
+        print(f"  Phase Remaining : {p_min}m {p_sec}s")
+        
     print(f"  Domains         : {count}")
     print(f"  Session expires : {expires}")
-    print(f"  Time remaining  : {rem_min}m {rem_sec}s")
+    print(f"  Total remaining : {rem_min}m {rem_sec}s")
     if pending:
         print(f"  ⏱ Unlock pending : {pending}")
     else:
@@ -245,6 +272,31 @@ def build_parser() -> argparse.ArgumentParser:
         default="blacklist",
         choices=["blacklist", "whitelist"],
         help="Blocking mode (default: blacklist)",
+    )
+    p_start.add_argument(
+        "--session-type", "-t",
+        type=str,
+        default="standard",
+        choices=["standard", "pomodoro"],
+        help="Session type (default: standard)",
+    )
+    p_start.add_argument(
+        "--focus",
+        type=int,
+        default=25,
+        help="Pomodoro focus minutes (default: 25)",
+    )
+    p_start.add_argument(
+        "--break-time",
+        type=int,
+        default=5,
+        help="Pomodoro break minutes (default: 5)",
+    )
+    p_start.add_argument(
+        "--cycles",
+        type=int,
+        default=4,
+        help="Pomodoro cycle count (default: 4)",
     )
     p_start.set_defaults(func=cmd_start)
 

@@ -8,6 +8,11 @@ let duration = 120;
 let countdown = null;
 let totalSecs = 0;
 
+let sessionType = 'standard';
+let pomoFocusMin = 25;
+let pomoBreakMin = 5;
+let pomoCycles = 4;
+
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
@@ -79,10 +84,36 @@ function renderStatus(data) {
     $('#stopDialog').classList.add('hidden');
 
     if (active) {
-        totalSecs = data.total_duration_seconds || data.remaining_seconds;
+        if (data.session_type === 'pomodoro') {
+            totalSecs = data.pomo_phase_total || 1;
+            startCountdown(data.pomo_phase_remaining || 0);
+            
+            $('#infoType').textContent = 'Pomodoro';
+            $('#pomoPhaseRow').style.display = 'flex';
+            $('#pomoCycleRow').style.display = 'flex';
+            
+            const dot = data.pomo_phase === 'break' ? '<span class="phase-dot break"></span>' : '<span class="phase-dot focus"></span>';
+            $('#infoPhase').innerHTML = `${dot} ${data.pomo_phase.toUpperCase()}`;
+            $('#infoCycle').textContent = `${data.pomo_current_cycle} / ${data.pomo_total_cycles}`;
+            
+            if (data.pomo_phase === 'break') {
+                $('.timer-ring').classList.add('break');
+                $('#timerLabel').textContent = 'BREAK';
+            } else {
+                $('.timer-ring').classList.remove('break');
+                $('#timerLabel').textContent = 'FOCUS';
+            }
+        } else {
+            totalSecs = data.total_duration_seconds || data.remaining_seconds;
+            startCountdown(data.remaining_seconds);
+            $('#infoType').textContent = 'Standard';
+            $('#pomoPhaseRow').style.display = 'none';
+            $('#pomoCycleRow').style.display = 'none';
+            $('.timer-ring').classList.remove('break');
+        }
+
         $('#infoMode').textContent = data.mode;
         $('#infoExpires').textContent = data.expires_at;
-        startCountdown(data.remaining_seconds);
 
         if (data.pending_unlock) {
             $('#unlockRow').style.display = 'flex';
@@ -93,6 +124,7 @@ function renderStatus(data) {
     } else {
         totalSecs = 0;
         stopCountdown();
+        $('.timer-ring').classList.remove('break');
     }
 }
 
@@ -115,6 +147,23 @@ function initEvents() {
         });
     });
 
+    // Session Type chips
+    $$('.type-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+            $$('.type-chip').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            sessionType = btn.dataset.type;
+            if (sessionType === 'pomodoro') {
+                $('#standardControls').classList.add('hidden');
+                $('#pomoControls').classList.remove('hidden');
+                updatePomoSummary();
+            } else {
+                $('#standardControls').classList.remove('hidden');
+                $('#pomoControls').classList.add('hidden');
+            }
+        });
+    });
+
     // Duration chips
     $$('.dur-chip').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -134,11 +183,56 @@ function initEvents() {
         }
     });
 
+    // Pomodoro chips & inputs
+    function updatePomoSummary() {
+        pomoFocusMin = parseInt($('#pomoFocus').value) || 25;
+        pomoBreakMin = parseInt($('#pomoBreak').value) || 5;
+        pomoCycles = parseInt($('#pomoCycles').value) || 4;
+        const total = (pomoFocusMin + pomoBreakMin) * pomoCycles;
+        const h = Math.floor(total / 60);
+        const m = total % 60;
+        $('#pomoTotal').textContent = `Total: ${h}h ${String(m).padStart(2,'0')}m`;
+    }
+
+    $$('.pomo-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+            $$('.pomo-chip').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            $('#pomoFocus').value = btn.dataset.focus;
+            $('#pomoBreak').value = btn.dataset.break;
+            updatePomoSummary();
+        });
+    });
+
+    ['#pomoFocus', '#pomoBreak', '#pomoCycles'].forEach(id => {
+        $(id).addEventListener('input', () => {
+            $$('.pomo-chip').forEach(b => b.classList.remove('active'));
+            updatePomoSummary();
+        });
+    });
+
     // Start
     $('#btnStart').addEventListener('click', async () => {
         $('#btnStart').textContent = '⏳ Starting...';
-        totalSecs = duration * 60;
-        const res = await api('POST', '/api/start', { duration, mode });
+        
+        let payload = {};
+        if (sessionType === 'pomodoro') {
+            const totalMin = (pomoFocusMin + pomoBreakMin) * pomoCycles;
+            totalSecs = totalMin * 60;
+            payload = {
+                duration: totalMin,
+                mode: mode,
+                session_type: 'pomodoro',
+                focus_minutes: pomoFocusMin,
+                break_minutes: pomoBreakMin,
+                cycles: pomoCycles
+            };
+        } else {
+            totalSecs = duration * 60;
+            payload = { duration, mode, session_type: 'standard' };
+        }
+        
+        const res = await api('POST', '/api/start', payload);
         $('#btnStart').textContent = '▶ Start Blocking';
         if (res.status === 'ok') refresh();
     });

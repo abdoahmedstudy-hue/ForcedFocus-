@@ -31,10 +31,10 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/tmp/forcefocus_web.log</string>
+    <string>/var/log/forcefocus_web.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/tmp/forcefocus_web_error.log</string>
+    <string>/var/log/forcefocus_web_error.log</string>
 
     <key>ThrottleInterval</key>
     <integer>5</integer>

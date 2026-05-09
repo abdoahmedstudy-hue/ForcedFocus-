@@ -42,6 +42,10 @@
             <div class="timer-info" id="timerInfo">
                 <span id="modeDisplay">—</span>
                 <span id="expiresDisplay">—</span>
+                <div class="pomo-status hidden" id="pomoStatus">
+                    <span class="pomo-phase-badge focus" id="pomoPhase">FOCUS</span>
+                    <span id="pomoCycleDisplay">Cycle 1/4</span>
+                </div>
             </div>
         </section>
 
@@ -64,6 +68,23 @@
                 </div>
             </div>
 
+            <!-- Session Type -->
+            <div class="card" id="sessionTypeCard">
+                <h2 class="card-title">Session Type</h2>
+                <div class="mode-toggle">
+                    <button class="mode-btn session-type-btn active" data-type="standard">
+                        <span class="mode-icon">⏱</span>
+                        <span class="mode-name">Standard</span>
+                        <span class="mode-desc">Continuous blocking</span>
+                    </button>
+                    <button class="mode-btn session-type-btn" data-type="pomodoro">
+                        <span class="mode-icon">🍅</span>
+                        <span class="mode-name">Pomodoro</span>
+                        <span class="mode-desc">Focus + break cycles</span>
+                    </button>
+                </div>
+            </div>
+
             <!-- Duration -->
             <div class="card" id="durationCard">
                 <h2 class="card-title">Session Duration</h2>
@@ -78,6 +99,31 @@
                 <div class="custom-duration">
                     <input type="number" id="customMinutes" min="1" max="1440" placeholder="Custom (min)">
                 </div>
+            </div>
+
+            <!-- Pomodoro Config (hidden by default) -->
+            <div class="card hidden" id="pomodoroCard">
+                <h2 class="card-title">🍅 Pomodoro Settings</h2>
+                <div class="pomo-presets">
+                    <button class="dur-btn active pomo-preset" data-focus="25" data-break="5">25/5</button>
+                    <button class="dur-btn pomo-preset" data-focus="50" data-break="10">50/10</button>
+                    <button class="dur-btn pomo-preset" data-focus="90" data-break="20">90/20</button>
+                </div>
+                <div class="pomo-custom">
+                    <div class="pomo-field">
+                        <label>Focus (min)</label>
+                        <input type="number" id="pomoFocus" min="1" max="240" value="25">
+                    </div>
+                    <div class="pomo-field">
+                        <label>Break (min)</label>
+                        <input type="number" id="pomoBreak" min="1" max="60" value="5">
+                    </div>
+                    <div class="pomo-field">
+                        <label>Cycles</label>
+                        <input type="number" id="pomoCycles" min="1" max="50" value="4">
+                    </div>
+                </div>
+                <p class="pomo-summary" id="pomoSummary">Total: 2h 00m (4 × 25m focus + 5m break)</p>
             </div>
 
             <!-- Start/Stop -->
@@ -106,7 +152,7 @@
                 </div>
                 <p class="list-desc">These sites will be blocked in Blacklist mode.</p>
                 <div class="add-domain">
-                    <input type="text" id="blacklistInput" placeholder="e.g. reddit.com or paste URL" autocomplete="off">
+                    <textarea id="blacklistInput" placeholder="e.g. reddit.com — or paste multiple domains, one per line" autocomplete="off" rows="1"></textarea>
                     <button class="btn-add" id="btnAddBlacklist">+</button>
                 </div>
                 <ul class="domain-list" id="blacklistDomains"></ul>
@@ -122,7 +168,7 @@
                 </div>
                 <p class="list-desc">Only these sites will be allowed in Whitelist mode.</p>
                 <div class="add-domain">
-                    <input type="text" id="whitelistInput" placeholder="e.g. github.com or paste URL" autocomplete="off">
+                    <textarea id="whitelistInput" placeholder="e.g. github.com — or paste multiple domains, one per line" autocomplete="off" rows="1"></textarea>
                     <button class="btn-add" id="btnAddWhitelist">+</button>
                 </div>
                 <ul class="domain-list" id="whitelistDomains"></ul>

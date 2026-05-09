@@ -10,6 +10,11 @@ let countdownInterval = null;
 let pollInterval = null;
 let totalSessionSeconds = 0;
 
+let sessionType = 'standard';
+let pomoFocusMin = 25;
+let pomoBreakMin = 5;
+let pomoCycles = 4;
+
 // ── DOM Elements ─────────────────────────────────────────────────────────────
 
 const $ = (sel) => document.querySelector(sel);
@@ -40,6 +45,15 @@ const els = {
     modalError:       $('#modalError'),
     toast:            $('#toast'),
     customMinutes:    $('#customMinutes'),
+    sessionTypeCard:  $('#sessionTypeCard'),
+    pomodoroCard:     $('#pomodoroCard'),
+    pomoFocus:        $('#pomoFocus'),
+    pomoBreak:        $('#pomoBreak'),
+    pomoCycles:       $('#pomoCycles'),
+    pomoSummary:      $('#pomoSummary'),
+    pomoStatus:       $('#pomoStatus'),
+    pomoPhase:        $('#pomoPhase'),
+    pomoCycleDisplay: $('#pomoCycleDisplay'),
 };
 
 // ── API Helpers ──────────────────────────────────────────────────────────────
@@ -126,11 +140,12 @@ function setActiveUI(status) {
 
     // Timer ring
     els.timerRing.classList.toggle('active', active);
-    els.timerLabel.textContent = active ? 'REMAINING' : 'READY';
 
     // Mode & duration cards
     els.modeCard.classList.toggle('disabled', active);
     els.durationCard.classList.toggle('disabled', active);
+    els.sessionTypeCard.classList.toggle('disabled', active);
+    els.pomodoroCard.classList.toggle('disabled', active);
 
     // Start/stop buttons
     els.btnStart.classList.toggle('hidden', active);
@@ -140,9 +155,31 @@ function setActiveUI(status) {
     if (active) {
         els.modeDisplay.textContent = `Mode: ${status.mode}`;
         els.expiresDisplay.textContent = `Expires: ${status.expires_at}`;
+        
+        if (status.session_type === 'pomodoro') {
+            els.pomoStatus.classList.remove('hidden');
+            els.pomoPhase.textContent = status.pomo_phase.toUpperCase();
+            els.pomoPhase.className = `pomo-phase-badge ${status.pomo_phase}`;
+            els.pomoCycleDisplay.textContent = `Cycle ${status.pomo_current_cycle}/${status.pomo_total_cycles}`;
+            
+            // Timer ring color
+            if (status.pomo_phase === 'break') {
+                els.timerRing.classList.add('break');
+            } else {
+                els.timerRing.classList.remove('break');
+            }
+            els.timerLabel.textContent = status.pomo_phase.toUpperCase();
+        } else {
+            els.pomoStatus.classList.add('hidden');
+            els.timerRing.classList.remove('break');
+            els.timerLabel.textContent = 'REMAINING';
+        }
     } else {
         els.modeDisplay.textContent = '—';
         els.expiresDisplay.textContent = '—';
+        els.pomoStatus.classList.add('hidden');
+        els.timerRing.classList.remove('break');
+        els.timerLabel.textContent = 'READY';
     }
 
     // Pending unlock
@@ -157,8 +194,13 @@ function setActiveUI(status) {
 
     // Timer
     if (active) {
-        totalSessionSeconds = status.total_duration_seconds || status.remaining_seconds;
-        startCountdown(status.remaining_seconds);
+        if (status.session_type === 'pomodoro') {
+            totalSessionSeconds = status.pomo_phase_total || 1;
+            startCountdown(status.pomo_phase_remaining || 0);
+        } else {
+            totalSessionSeconds = status.total_duration_seconds || status.remaining_seconds;
+            startCountdown(status.remaining_seconds);
+        }
     } else {
         totalSessionSeconds = 0;
         stopCountdown();
@@ -218,18 +260,61 @@ function renderDomainList(container, domains, listName) {
 
 function initEvents() {
     // Mode toggle
-    $$('.mode-btn').forEach(btn => {
+    $$('.mode-btn:not(.session-type-btn)').forEach(btn => {
         btn.addEventListener('click', () => {
-            $$('.mode-btn').forEach(b => b.classList.remove('active'));
+            $$('.mode-btn:not(.session-type-btn)').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentMode = btn.dataset.mode;
         });
     });
 
-    // Duration buttons
-    $$('.dur-btn').forEach(btn => {
+    function updatePomoSummary() {
+        pomoFocusMin = parseInt(els.pomoFocus.value) || 25;
+        pomoBreakMin = parseInt(els.pomoBreak.value) || 5;
+        pomoCycles = parseInt(els.pomoCycles.value) || 4;
+        const total = (pomoFocusMin + pomoBreakMin) * pomoCycles;
+        const h = Math.floor(total / 60);
+        const m = total % 60;
+        els.pomoSummary.textContent = `Total: ${h}h ${String(m).padStart(2, '0')}m (${pomoCycles} × ${pomoFocusMin}m focus + ${pomoBreakMin}m break)`;
+    }
+
+    $$('.session-type-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            $$('.dur-btn').forEach(b => b.classList.remove('active'));
+            $$('.session-type-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            sessionType = btn.dataset.type;
+            if (sessionType === 'pomodoro') {
+                els.durationCard.classList.add('hidden');
+                els.pomodoroCard.classList.remove('hidden');
+                updatePomoSummary();
+            } else {
+                els.durationCard.classList.remove('hidden');
+                els.pomodoroCard.classList.add('hidden');
+            }
+        });
+    });
+
+    $$('.pomo-preset').forEach(btn => {
+        btn.addEventListener('click', () => {
+            $$('.pomo-preset').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            els.pomoFocus.value = btn.dataset.focus;
+            els.pomoBreak.value = btn.dataset.break;
+            updatePomoSummary();
+        });
+    });
+
+    [els.pomoFocus, els.pomoBreak, els.pomoCycles].forEach(el => {
+        el.addEventListener('input', () => {
+            $$('.pomo-preset').forEach(b => b.classList.remove('active'));
+            updatePomoSummary();
+        });
+    });
+
+    // Duration buttons (exclude pomo-preset buttons which share .dur-btn class)
+    $$('.dur-btn:not(.pomo-preset)').forEach(btn => {
+        btn.addEventListener('click', () => {
+            $$('.dur-btn:not(.pomo-preset)').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             selectedDuration = parseInt(btn.dataset.minutes);
             els.customMinutes.value = '';
@@ -247,10 +332,26 @@ function initEvents() {
 
     // Start button
     els.btnStart.addEventListener('click', async () => {
-        const duration = selectedDuration;
-        totalSessionSeconds = duration * 60;
+        let payload = {};
+        if (sessionType === 'pomodoro') {
+            const totalMin = (pomoFocusMin + pomoBreakMin) * pomoCycles;
+            totalSessionSeconds = totalMin * 60;
+            payload = {
+                duration: totalMin,
+                mode: currentMode,
+                session_type: 'pomodoro',
+                focus_minutes: pomoFocusMin,
+                break_minutes: pomoBreakMin,
+                cycles: pomoCycles
+            };
+        } else {
+            const duration = selectedDuration;
+            totalSessionSeconds = duration * 60;
+            payload = { duration, mode: currentMode, session_type: 'standard' };
+        }
+        
         els.btnStart.textContent = '⏳ Starting...';
-        const res = await api('POST', '/api/start', { duration, mode: currentMode });
+        const res = await api('POST', '/api/start', payload);
         els.btnStart.innerHTML = '<span class="btn-icon">▶</span> Start Blocking';
         if (res.status === 'ok') {
             showToast(res.message);
@@ -305,13 +406,19 @@ function initEvents() {
     // Add domain: blacklist
     $('#btnAddBlacklist').addEventListener('click', () => addDomain('blacklist'));
     els.blacklistInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') addDomain('blacklist');
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            addDomain('blacklist');
+        }
     });
 
     // Add domain: whitelist
     $('#btnAddWhitelist').addEventListener('click', () => addDomain('whitelist'));
     els.whitelistInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') addDomain('whitelist');
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            addDomain('whitelist');
+        }
     });
 }
 
@@ -325,6 +432,8 @@ function extractDomain(input) {
     d = d.split(':')[0];
     // Strip www.
     d = d.replace(/^www\./, '');
+    // Strip wildcard characters (e.g., *.example.com → example.com, example.com* → example.com)
+    d = d.replace(/^\*\.?/, '').replace(/\*$/, '');
     return d;
 }
 
@@ -333,21 +442,49 @@ async function addDomain(listName) {
     const raw = input.value.trim();
     if (!raw) return;
 
-    const domain = extractDomain(raw);
+    // Split by newlines to support bulk paste
+    const lines = raw.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
+    const domains = [];
+    const invalid = [];
 
-    // Basic validation
-    if (!/^[a-z0-9]([a-z0-9\-]*\.)+[a-z]{2,}$/.test(domain)) {
+    for (const line of lines) {
+        const domain = extractDomain(line);
+        // Basic validation
+        if (/^[a-z0-9]([a-z0-9\-]*\.)+[a-z]{2,}$/.test(domain)) {
+            domains.push(domain);
+        } else {
+            invalid.push(line);
+        }
+    }
+
+    if (domains.length === 0) {
         showToast('Invalid domain. Example: reddit.com or https://reddit.com/r/test');
         return;
     }
 
-    const res = await api('POST', `/api/lists/${listName}`, { domain });
-    if (res.status === 'ok') {
-        input.value = '';
-        showToast(`Added ${domain} to ${listName}`);
-        refreshLists();
+    if (invalid.length > 0) {
+        showToast(`Skipped ${invalid.length} invalid: ${invalid.slice(0, 3).join(', ')}`);
+    }
+
+    // Use bulk endpoint for multiple domains, single endpoint for one
+    if (domains.length === 1) {
+        const res = await api('POST', `/api/lists/${listName}`, { domain: domains[0] });
+        if (res.status === 'ok') {
+            input.value = '';
+            showToast(`Added ${domains[0]} to ${listName}`);
+            refreshLists();
+        } else {
+            showToast('Error: ' + res.message);
+        }
     } else {
-        showToast('Error: ' + res.message);
+        const res = await api('POST', `/api/lists/${listName}/bulk`, { domains });
+        if (res.status === 'ok') {
+            input.value = '';
+            showToast(`Added ${domains.length} domains to ${listName}`);
+            refreshLists();
+        } else {
+            showToast('Error: ' + res.message);
+        }
     }
 }
 

@@ -18,6 +18,18 @@ async function syncBlockRules() {
         const statusRes = await fetch(`${API}/api/status`, { signal: AbortSignal.timeout(2000) });
         const status = await statusRes.json();
 
+        // During pomodoro break, clear block rules
+        if (status.active && status.session_type === 'pomodoro' && status.pomo_phase === 'break') {
+            if (lastActive) {
+                await clearBlockRules();
+                lastActive = false;
+                lastMode = null;
+            }
+            chrome.action.setBadgeText({ text: 'BRK' });
+            chrome.action.setBadgeBackgroundColor({ color: '#22c55e' });
+            return;
+        }
+
         if (status.active && status.mode === 'blacklist') {
             if (!lastActive || lastMode !== 'blacklist') {
                 // Session just started — fetch domains and add rules
@@ -55,12 +67,9 @@ async function syncBlockRules() {
             chrome.action.setBadgeText({ text: '' });
         }
     } catch {
-        // Server not running — clear rules to be safe
-        if (lastActive) {
-            await clearBlockRules();
-            lastActive = false;
-            lastMode = null;
-        }
+        // Server not running — KEEP existing rules to prevent bypass.
+        // Rules are only cleared when the server explicitly reports inactive.
+        console.log('[ForcedFocus] Server unreachable — keeping existing rules.');
     }
 }
 
@@ -88,7 +97,7 @@ async function applyBlockRules(domains) {
             },
             condition: {
                 urlFilter: `||${domain}`,
-                resourceTypes: ['main_frame']
+                resourceTypes: ['main_frame', 'sub_frame']
             }
         });
     }
@@ -122,7 +131,7 @@ async function applyWhitelistRules(allowedDomains) {
         condition: {
             urlFilter: '*',
             excludedInitiatorDomains: ['127.0.0.1', 'localhost', ...allowedDomains],
-            resourceTypes: ['main_frame']
+            resourceTypes: ['main_frame', 'sub_frame']
         }
     }];
 
@@ -135,7 +144,7 @@ async function applyWhitelistRules(allowedDomains) {
             action: { type: 'allow' },
             condition: {
                 urlFilter: `||${domain}`,
-                resourceTypes: ['main_frame']
+                resourceTypes: ['main_frame', 'sub_frame']
             }
         });
     }
@@ -146,7 +155,7 @@ async function applyWhitelistRules(allowedDomains) {
         action: { type: 'allow' },
         condition: {
             urlFilter: '||127.0.0.1',
-            resourceTypes: ['main_frame']
+            resourceTypes: ['main_frame', 'sub_frame']
         }
     });
     rules.push({
@@ -155,7 +164,7 @@ async function applyWhitelistRules(allowedDomains) {
         action: { type: 'allow' },
         condition: {
             urlFilter: '||localhost',
-            resourceTypes: ['main_frame']
+            resourceTypes: ['main_frame', 'sub_frame']
         }
     });
 
@@ -186,7 +195,13 @@ async function clearBlockRules() {
     }
 }
 
-// ── Start polling ────────────────────────────────────────────────────────────
+// ── Start polling via chrome.alarms (persists across service worker suspensions) ──
 
-setInterval(syncBlockRules, POLL_INTERVAL);
+chrome.alarms.create('syncRules', { periodInMinutes: 0.05 }); // ~3 seconds
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'syncRules') {
+        syncBlockRules();
+    }
+});
+// Also run immediately on service worker start
 syncBlockRules();
