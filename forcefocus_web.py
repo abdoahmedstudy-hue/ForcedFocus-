@@ -27,8 +27,17 @@ def send_to_daemon(cmd: dict) -> dict:
         sock.settimeout(10)
         sock.connect(SOCK_PATH)
         sock.sendall(json.dumps(cmd).encode("utf-8"))
-        raw = sock.recv(16384).decode("utf-8")
+        chunks = []
+        while True:
+            try:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            except socket.timeout:
+                break
         sock.close()
+        raw = b''.join(chunks).decode("utf-8")
         return json.loads(raw)
     except Exception as exc:
         return {"status": "error", "message": f"Daemon communication failed: {exc}"}
@@ -156,6 +165,10 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
+class ReusableHTTPServer(HTTPServer):
+    allow_reuse_address = True
+
+
 def main():
     # Allow running from source dir for development
     global WEB_DIR
@@ -167,7 +180,7 @@ def main():
     print(f"Serving files from: {WEB_DIR}")
     print("Press Ctrl+C to stop.\n")
 
-    server = HTTPServer((HOST, PORT), ForcedFocusHandler)
+    server = ReusableHTTPServer((HOST, PORT), ForcedFocusHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

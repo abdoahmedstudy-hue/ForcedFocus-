@@ -157,7 +157,7 @@ function setActiveUI(status) {
 
     // Timer
     if (active) {
-        totalSessionSeconds = totalSessionSeconds || status.remaining_seconds;
+        totalSessionSeconds = status.total_duration_seconds || status.remaining_seconds;
         startCountdown(status.remaining_seconds);
     } else {
         totalSessionSeconds = 0;
@@ -192,19 +192,15 @@ function renderDomainList(container, domains, listName) {
     container.innerHTML = '';
     domains.forEach(domain => {
         const li = document.createElement('li');
-        li.innerHTML = `
-            <span>${domain}</span>
-            <button class="remove-btn" data-list="${listName}" data-domain="${domain}">✕</button>
-        `;
-        container.appendChild(li);
-    });
-
-    // Attach remove handlers
-    container.querySelectorAll('.remove-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const list = btn.dataset.list;
-            const domain = btn.dataset.domain;
-            const res = await api('DELETE', `/api/lists/${list}/${domain}`);
+        const span = document.createElement('span');
+        span.textContent = domain;
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-btn';
+        removeBtn.dataset.list = listName;
+        removeBtn.dataset.domain = domain;
+        removeBtn.textContent = '✕';
+        removeBtn.addEventListener('click', async () => {
+            const res = await api('DELETE', `/api/lists/${listName}/${domain}`);
             if (res.status === 'ok') {
                 showToast(`Removed ${domain}`);
                 refreshLists();
@@ -212,6 +208,9 @@ function renderDomainList(container, domains, listName) {
                 showToast('Error: ' + res.message);
             }
         });
+        li.appendChild(span);
+        li.appendChild(removeBtn);
+        container.appendChild(li);
     });
 }
 
@@ -316,14 +315,29 @@ function initEvents() {
     });
 }
 
+function extractDomain(input) {
+    let d = input.trim().toLowerCase();
+    // Strip protocol
+    d = d.replace(/^https?:\/\//, '');
+    // Strip path, query, hash
+    d = d.split('/')[0].split('?')[0].split('#')[0];
+    // Strip port
+    d = d.split(':')[0];
+    // Strip www.
+    d = d.replace(/^www\./, '');
+    return d;
+}
+
 async function addDomain(listName) {
     const input = listName === 'blacklist' ? els.blacklistInput : els.whitelistInput;
-    const domain = input.value.trim().toLowerCase();
-    if (!domain) return;
+    const raw = input.value.trim();
+    if (!raw) return;
+
+    const domain = extractDomain(raw);
 
     // Basic validation
     if (!/^[a-z0-9]([a-z0-9\-]*\.)+[a-z]{2,}$/.test(domain)) {
-        showToast('Invalid domain format. Example: reddit.com');
+        showToast('Invalid domain. Example: reddit.com or https://reddit.com/r/test');
         return;
     }
 

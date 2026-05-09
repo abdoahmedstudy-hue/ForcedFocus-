@@ -1,0 +1,316 @@
+/* ForcedFocus Chrome Extension — Popup Styles */
+
+:root {
+    --bg: #0b0b14;
+    --bg2: #12121f;
+    --card: rgba(18, 18, 35, 0.9);
+    --border: rgba(255,255,255,0.06);
+    --border-act: rgba(99,102,241,0.4);
+    --text: #e4e4f0;
+    --text2: #8585a5;
+    --text3: #4a4a65;
+    --accent: #6366f1;
+    --violet: #8b5cf6;
+    --red: #ef4444;
+    --green: #22c55e;
+    --warn: #f59e0b;
+    --grad: linear-gradient(135deg, #6366f1, #8b5cf6);
+    --r: 12px;
+    --rs: 8px;
+    --t: 0.2s ease;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    width: 320px;
+    min-height: 200px;
+    overflow: hidden;
+}
+
+/* ── Offline ──────────────────────────── */
+.offline {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    text-align: center;
+    gap: 8px;
+}
+.offline-icon { font-size: 36px; margin-bottom: 4px; }
+.offline p { font-size: 14px; font-weight: 600; }
+.offline span { font-size: 11px; color: var(--text3); }
+.offline code {
+    background: rgba(255,255,255,0.06);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+}
+
+/* ── Container ────────────────────────── */
+.container { padding: 16px; }
+
+/* ── Header ───────────────────────────── */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 700;
+}
+.logo-icon {
+    width: 28px; height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    background: var(--grad);
+    border-radius: 8px;
+}
+.badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 100px;
+    background: rgba(34,197,94,0.1);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.2);
+}
+.badge.active {
+    background: rgba(239,68,68,0.1);
+    color: var(--red);
+    border-color: rgba(239,68,68,0.3);
+}
+
+/* ── Timer ─────────────────────────────── */
+.timer-box {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+.timer-ring {
+    position: relative;
+    width: 130px; height: 130px;
+}
+.timer-ring svg {
+    width: 100%; height: 100%;
+    transform: rotate(-90deg);
+}
+.ring-bg {
+    fill: none;
+    stroke: rgba(255,255,255,0.04);
+    stroke-width: 5;
+}
+.ring-progress {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 5;
+    stroke-linecap: round;
+    stroke-dasharray: 326.73;
+    stroke-dashoffset: 326.73;
+    transition: stroke-dashoffset 1s linear;
+}
+.timer-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.timer-value {
+    font-size: 26px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.5px;
+}
+.timer-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--text3);
+    margin-top: 2px;
+}
+
+/* ── Controls ──────────────────────────── */
+.controls { margin-bottom: 12px; }
+
+.mode-row, .dur-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.mode-chip, .dur-chip {
+    flex: 1;
+    padding: 8px 4px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: var(--rs);
+    color: var(--text2);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--t);
+    text-align: center;
+}
+.mode-chip:hover, .dur-chip:hover {
+    background: rgba(255,255,255,0.05);
+}
+.mode-chip.active, .dur-chip.active {
+    background: rgba(99,102,241,0.1);
+    border-color: var(--border-act);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.btn-start {
+    width: 100%;
+    padding: 12px;
+    background: var(--grad);
+    border: none;
+    border-radius: var(--rs);
+    color: white;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--t);
+    box-shadow: 0 4px 16px rgba(99,102,241,0.25);
+}
+.btn-start:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(99,102,241,0.35);
+}
+.btn-start:active { transform: translateY(0); }
+
+.custom-row {
+    margin-bottom: 10px;
+}
+.custom-row input {
+    width: 100%;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: var(--rs);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    outline: none;
+    transition: var(--t);
+}
+.custom-row input:focus {
+    border-color: var(--border-act);
+    box-shadow: 0 0 0 2px rgba(99,102,241,0.1);
+}
+.custom-row input::placeholder { color: var(--text3); }
+
+/* ── Active State ──────────────────────── */
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+}
+.info-label { color: var(--text2); }
+.info-value { font-weight: 600; }
+.unlock-val { color: var(--warn); }
+
+.btn-stop {
+    width: 100%;
+    margin-top: 12px;
+    padding: 12px;
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.25);
+    border-radius: var(--rs);
+    color: var(--red);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--t);
+}
+.btn-stop:hover {
+    background: rgba(239,68,68,0.15);
+}
+
+/* ── Stop Dialog ───────────────────────── */
+.stop-dialog {
+    margin-top: 12px;
+    padding: 14px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+}
+.stop-dialog p {
+    font-size: 12px;
+    color: var(--text2);
+    margin-bottom: 10px;
+}
+.stop-dialog input {
+    width: 100%;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: var(--rs);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+    margin-bottom: 10px;
+}
+.stop-dialog input:focus {
+    border-color: var(--border-act);
+}
+.dialog-btns { display: flex; gap: 8px; }
+.dbtn {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: var(--rs);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.dbtn-cancel {
+    background: rgba(255,255,255,0.05);
+    color: var(--text2);
+}
+.dbtn-confirm {
+    background: var(--red);
+    color: white;
+}
+.err {
+    color: var(--red);
+    font-size: 11px;
+    margin-top: 8px;
+    text-align: center;
+}
+
+/* ── Footer ────────────────────────────── */
+.footer {
+    text-align: center;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+.footer a {
+    font-size: 12px;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+}
+.footer a:hover { text-decoration: underline; }
+
+.hidden { display: none !important; }
