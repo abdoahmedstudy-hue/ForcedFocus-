@@ -60,6 +60,30 @@
                     </div>
                 </section>
 
+                <!-- Notifications Settings -->
+                <section class="card" style="margin-bottom: 24px;">
+                    <div class="card-header">
+                        <h3 class="card-title">🔔 Notifications</h3>
+                        <p class="list-desc">Configure system alerts for your focus sessions.</p>
+                    </div>
+                    <div class="settings-item" style="margin-top: 16px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+                            <input type="checkbox" id="intentNotifEnabled" style="width: 16px; height: 16px;">
+                            Enable Continuous Target Reminders
+                        </label>
+                        <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px; margin-left: 24px;">Send a system notification to remind you of your target.</p>
+                    </div>
+                    <div class="settings-item" style="margin-left: 24px;">
+                        <label>Reminder Interval (minutes)</label>
+                        <select id="intentNotifInterval" style="width: 120px;">
+                            <option value="5">Every 5 min</option>
+                            <option value="10">Every 10 min</option>
+                            <option value="15">Every 15 min</option>
+                            <option value="30">Every 30 min</option>
+                        </select>
+                    </div>
+                </section>
+
                 <!-- Right: Domain Groups -->
                 <section class="card">
                     <div class="card-header">
