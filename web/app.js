@@ -244,9 +244,13 @@ function stopCountdown() {
   els.timerProgress.style.strokeDashoffset = 565.48;
 }
 
+let isStarting = false;
+
 // ── UI State ─────────────────────────────────────────────────────────────────
 
 function setActiveUI(status) {
+  if (isStarting) return;
+
   const active = status.active;
   const schedules = status.schedules || [];
   const hasSchedules = schedules.length > 0;
@@ -696,6 +700,17 @@ function initEvents() {
     }
   });
 
+  const intentInput = $("#intentModalInput");
+  if (intentInput) {
+    intentInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const btnConfirmIntent = $("#btnConfirmIntent");
+        if (btnConfirmIntent) btnConfirmIntent.click();
+      }
+    });
+  }
+
   // Cancel Intent
   const btnCancelIntent = $("#btnCancelIntent");
   if (btnCancelIntent) {
@@ -743,6 +758,7 @@ function initEvents() {
       const originalBtnHTML = els.btnStart.innerHTML;
       els.btnStart.textContent = "⏳ Starting...";
       els.btnStart.disabled = true;
+      isStarting = true;
 
       try {
         const res = await api("POST", "/api/start", payload);
@@ -760,6 +776,7 @@ function initEvents() {
       } finally {
         els.btnStart.innerHTML = originalBtnHTML;
         els.btnStart.disabled = false;
+        isStarting = false;
       }
       refreshStatus();
     });

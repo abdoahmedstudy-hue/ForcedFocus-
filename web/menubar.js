@@ -41,6 +41,8 @@ const els = {
   infoNext: $("#mbInfoNext"),
   infoNextTime: $("#mbInfoNextTime"),
   nextRow: $("#mbNextRow"),
+  intentRow: $("#mbIntentRow"),
+  infoIntent: $("#mbInfoIntent"),
 
   btnStart: $("#mbBtnStart"),
   btnStop: $("#mbBtnStop"),
@@ -62,6 +64,11 @@ const els = {
   pomoFocus: $("#pomoFocus"),
   pomoBreak: $("#pomoBreak"),
   pomoCycles: $("#pomoCycles"),
+  // Intent UI
+  intentState: $("#intentState"),
+  intentPromptInput: $("#intentPromptInput"),
+  btnIntentCancel: $("#btnIntentCancel"),
+  btnIntentConfirm: $("#btnIntentConfirm"),
 
   // Group UI
   groupSection: $("#groupSection"),
@@ -186,11 +193,17 @@ function startCountdown(rem) {
   countdownInterval = setInterval(tick, 100); // 10fps for buttery smooth movement
 }
 
+let isStarting = false;
+
 function renderStatus(data) {
+  if (isStarting) return; // Prevent UI jank while daemon applies kernel rules
+
   const active = data.active;
+  const isIntentVisible = !els.intentState.classList.contains("hidden");
 
   if (active) {
     els.idleState.classList.add("hidden");
+    els.intentState.classList.add("hidden");
     els.activeState.classList.remove("hidden");
 
     // Populate Info Grid
@@ -224,9 +237,20 @@ function renderStatus(data) {
       els.nextRow.classList.add("hidden");
       $(".timer-ring").classList.remove("break");
     }
+    
+    if (data.intent) {
+      els.intentRow.classList.remove("hidden");
+      els.infoIntent.textContent = data.intent;
+    } else {
+      els.intentRow.classList.add("hidden");
+    }
   } else {
-    els.idleState.classList.remove("hidden");
-    els.activeState.classList.add("hidden");
+    // We are idle
+    if (!isIntentVisible) {
+      els.idleState.classList.remove("hidden");
+      els.activeState.classList.add("hidden");
+      els.intentState.classList.add("hidden");
+    }
     els.badgeText.textContent = "Idle";
     els.badge.classList.remove("active");
     if (countdownInterval) clearInterval(countdownInterval);
@@ -338,15 +362,39 @@ function initEvents() {
     });
   });
 
-  els.btnStart.addEventListener("click", async () => {
-    els.btnStart.textContent = "Starting...";
-    els.btnStart.disabled = true;
+  els.btnStart.addEventListener("click", () => {
+    els.idleState.classList.add("hidden");
+    els.intentState.classList.remove("hidden");
+    els.intentPromptInput.value = "";
+    els.intentPromptInput.focus();
+  });
+
+  els.btnIntentCancel.addEventListener("click", () => {
+    els.intentState.classList.add("hidden");
+    els.idleState.classList.remove("hidden");
+  });
+  
+  els.intentPromptInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      els.btnIntentConfirm.click();
+    }
+  });
+
+  els.btnIntentConfirm.addEventListener("click", async () => {
+    els.btnIntentConfirm.textContent = "Starting...";
+    els.btnIntentConfirm.disabled = true;
+    isStarting = true;
 
     let payload = {
       mode: currentMode,
       session_type: currentType,
       groups: selectedGroups,
     };
+    
+    const intentStr = els.intentPromptInput.value.trim();
+    if (intentStr) {
+      payload.intent = intentStr;
+    }
 
     if (currentType === "standard") {
       const activeDur = Array.from(els.durChips).find((c) =>
@@ -373,9 +421,11 @@ function initEvents() {
       }
     } catch (e) {
       console.error("Start failed:", e);
+      alert("Communication failed.");
     } finally {
-      els.btnStart.textContent = "▶ Start Session";
-      els.btnStart.disabled = false;
+      els.btnIntentConfirm.textContent = "Begin";
+      els.btnIntentConfirm.disabled = false;
+      isStarting = false;
     }
   });
 

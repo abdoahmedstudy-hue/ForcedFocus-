@@ -1797,12 +1797,21 @@ class ForcedFocusDaemon:
 
     def _send_mac_notification(self, title: str, message: str, subtitle: str = None):
         try:
-            script = f'display notification "{message}" with title "{title}"'
+            safe_title = title.replace('"', '\\"')
+            safe_message = message.replace('"', '\\"')
+            script = f'display notification "{safe_message}" with title "{safe_title}"'
             if subtitle:
-                script += f' subtitle "{subtitle}"'
-            # Play a default system sound to get attention
+                safe_sub = subtitle.replace('"', '\\"')
+                script += f' subtitle "{safe_sub}"'
             script += ' sound name "Glass"'
-            subprocess.run(["osascript", "-e", script], capture_output=True, timeout=2)
+            
+            # Try to link with Mac Menu app
+            app_script = f'tell application "ForcedFocusBar" to {script}'
+            proc = subprocess.run(["osascript", "-e", app_script], capture_output=True, timeout=2)
+            
+            if proc.returncode != 0:
+                # Fallback
+                subprocess.run(["osascript", "-e", script], capture_output=True, timeout=2)
         except Exception as e:
             logging.error("Failed to send notification: %s", e)
 
@@ -2520,10 +2529,12 @@ class ForcedFocusDaemon:
                 interval = (
                     int(self.settings.get("intent_notification_interval", 15)) * 60
                 )
-                if (
-                    now_mono - getattr(self, "_mono_last_intent_notif", now_mono)
-                    >= interval
-                ):
+                last_notif = getattr(self, "_mono_last_intent_notif", 0)
+                if last_notif == 0:
+                    # Initialize to now so it doesn't trigger immediately upon start,
+                    # but rather after the first interval
+                    self._mono_last_intent_notif = now_mono
+                elif now_mono - last_notif >= interval:
                     self._mono_last_intent_notif = now_mono
                     self._send_mac_notification(
                         "Focus Reminder", f"Target: {self.intent}"
