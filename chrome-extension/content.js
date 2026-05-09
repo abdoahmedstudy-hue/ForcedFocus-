@@ -7,11 +7,11 @@
 
 // Only run on pages that are being blocked by ForcedFocus
 const urlParams = new URLSearchParams(window.location.search);
-const blockedDomain = urlParams.get('domain');
+const blockedDomain = urlParams.get("domain");
 
 if (blockedDomain) {
   // Add styling for blocked pages
-  const style = document.createElement('style');
+  const style = document.createElement("style");
   style.textContent = `
     body.forcedfocus-blocked {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -95,43 +95,46 @@ if (blockedDomain) {
   document.head.appendChild(style);
 
   // R2: Build blocked page with safe DOM construction — NO innerHTML with user data
-  document.body.className = 'forcedfocus-blocked';
-  document.body.textContent = ''; // Clear safely
+  document.body.className = "forcedfocus-blocked";
+  document.body.textContent = ""; // Clear safely
 
-  const container = document.createElement('div');
-  container.className = 'forcedfocus-container';
+  const container = document.createElement("div");
+  container.className = "forcedfocus-container";
 
-  const icon = document.createElement('div');
-  icon.className = 'forcedfocus-icon';
-  icon.textContent = '🚫';
+  const icon = document.createElement("div");
+  icon.className = "forcedfocus-icon";
+  icon.textContent = "🚫";
 
-  const title = document.createElement('h1');
-  title.className = 'forcedfocus-title';
-  title.textContent = 'Website Blocked';
+  const title = document.createElement("h1");
+  title.className = "forcedfocus-title";
+  title.textContent = "Website Blocked";
 
-  const message = document.createElement('p');
-  message.className = 'forcedfocus-message';
-  message.appendChild(document.createTextNode('Access to '));
-  const domainSpan = document.createElement('span');
-  domainSpan.className = 'forcedfocus-domain';
+  const message = document.createElement("p");
+  message.className = "forcedfocus-message";
+  message.appendChild(document.createTextNode("Access to "));
+  const domainSpan = document.createElement("span");
+  domainSpan.className = "forcedfocus-domain";
   domainSpan.textContent = blockedDomain; // R2: textContent — safe, no XSS
   message.appendChild(domainSpan);
-  message.appendChild(document.createTextNode(' has been blocked by ForcedFocus.'));
+  message.appendChild(
+    document.createTextNode(" has been blocked by ForcedFocus."),
+  );
 
-  const timer = document.createElement('div');
-  timer.className = 'forcedfocus-timer';
-  timer.id = 'timer';
-  timer.textContent = 'Session ends in: calculating...';
+  const timer = document.createElement("div");
+  timer.className = "forcedfocus-timer";
+  timer.id = "timer";
+  timer.textContent = "Session ends in: calculating...";
 
-  const footer = document.createElement('p');
-  footer.className = 'forcedfocus-footer';
-  footer.textContent = 'Use your focused time productively. Consider working on important tasks.';
+  const footer = document.createElement("p");
+  footer.className = "forcedfocus-footer";
+  footer.textContent =
+    "Use your focused time productively. Consider working on important tasks.";
 
-  const closeBtn = document.createElement('a');
-  closeBtn.href = '#';
-  closeBtn.className = 'forcedfocus-button';
-  closeBtn.id = 'closeTab';
-  closeBtn.textContent = 'Close This Tab';
+  const closeBtn = document.createElement("a");
+  closeBtn.href = "#";
+  closeBtn.className = "forcedfocus-button";
+  closeBtn.id = "closeTab";
+  closeBtn.textContent = "Close This Tab";
 
   container.appendChild(icon);
   container.appendChild(title);
@@ -142,7 +145,7 @@ if (blockedDomain) {
   document.body.appendChild(container);
 
   // Add close tab functionality
-  closeBtn.addEventListener('click', (e) => {
+  closeBtn.addEventListener("click", (e) => {
     e.preventDefault();
     window.close();
   });
@@ -160,30 +163,30 @@ if (blockedDomain) {
   function updateTimer() {
     if (!isExtensionValid()) {
       clearInterval(timerPoll);
-      const t = document.getElementById('timer');
-      if (t) t.textContent = 'Session active — stay focused!';
+      const t = document.getElementById("timer");
+      if (t) t.textContent = "Session active — stay focused!";
       return;
     }
 
     try {
-      chrome.runtime.sendMessage({action: 'getTimeRemaining'}, (response) => {
+      chrome.runtime.sendMessage({ action: "getTimeRemaining" }, (response) => {
         if (chrome.runtime.lastError) {
           // Service worker sleeping or extension reloaded
-          const t = document.getElementById('timer');
-          if (t) t.textContent = 'Session active — stay focused!';
+          const t = document.getElementById("timer");
+          if (t) t.textContent = "Session active — stay focused!";
           return;
         }
         if (response && response.remaining > 0) {
-          const t = document.getElementById('timer');
+          const t = document.getElementById("timer");
           if (t) {
             const h = Math.floor(response.remaining / 3600);
             const minutes = Math.floor((response.remaining % 3600) / 60);
             const seconds = response.remaining % 60;
-            t.textContent = `Session ends in: ${h > 0 ? h + ':' : ''}${String(minutes).padStart(2, '0')}:${String(seconds).toString().padStart(2, '0')}`;
+            t.textContent = `Session ends in: ${h > 0 ? h + ":" : ""}${String(minutes).padStart(2, "0")}:${String(seconds).toString().padStart(2, "0")}`;
           }
         } else if (response && response.remaining === 0) {
-          const t = document.getElementById('timer');
-          if (t) t.textContent = 'Session ended! You can close this tab.';
+          const t = document.getElementById("timer");
+          if (t) t.textContent = "Session ended! You can close this tab.";
         }
       });
     } catch (e) {

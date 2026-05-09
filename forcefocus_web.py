@@ -50,7 +50,7 @@ def send_to_daemon(cmd: dict, retries: int = 3) -> dict:
                 except socket.timeout:
                     break
             sock.close()
-            raw = b''.join(chunks).decode("utf-8")
+            raw = b"".join(chunks).decode("utf-8")
             return json.loads(raw)
         except (ConnectionRefusedError, FileNotFoundError) as exc:
             last_error = exc
@@ -83,7 +83,10 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
     def _get_cors_origin(self) -> str:
         """Return the allowed origin for CORS headers."""
         origin = self.headers.get("Origin")
-        if origin and (origin in ("http://localhost:7070", "http://127.0.0.1:7070") or origin == "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc"):
+        if origin and (
+            origin in ("http://localhost:7070", "http://127.0.0.1:7070")
+            or origin == "chrome-extension://hcgpgflhkpdccdjkkobofpaemcgjmhdc"
+        ):
             return origin
         return "http://127.0.0.1:7070"
 
@@ -139,7 +142,9 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
         path = unquote(parsed.path)
 
         if path.startswith("/api/") and not self._is_origin_allowed():
-            self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
+            self._send_json(
+                {"status": "error", "message": "CORS policy: Origin not allowed."}, 403
+            )
             return
 
         if path == "/api/status":
@@ -160,11 +165,13 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
-        
+
         if not self._is_origin_allowed():
-            self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
+            self._send_json(
+                {"status": "error", "message": "CORS policy: Origin not allowed."}, 403
+            )
             return
-            
+
         body = self._read_body()
 
         if path == "/api/start":
@@ -224,7 +231,9 @@ class ForcedFocusHandler(BaseHTTPRequestHandler):
         path = unquote(parsed.path)
 
         if not self._is_origin_allowed():
-            self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
+            self._send_json(
+                {"status": "error", "message": "CORS policy: Origin not allowed."}, 403
+            )
             return
 
         parts = path.strip("/").split("/")

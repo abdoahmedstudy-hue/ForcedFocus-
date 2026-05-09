@@ -5,7 +5,7 @@
  * Includes analytics, retry logic, adaptive polling, and state persistence.
  */
 
-const API = 'http://127.0.0.1:7070';
+const API = "http://127.0.0.1:7070";
 const POLL_INTERVAL = 3000;
 const RULE_ID_START = 1000;
 const MAX_RETRY_ATTEMPTS = 3;
@@ -23,7 +23,7 @@ let syncInProgress = false; // P4: Guard against cascading syncs
 let analytics = {
   blockedRequests: 0,
   allowedRequests: 0,
-  startTime: Date.now()
+  startTime: Date.now(),
 };
 
 // S4: Debounced analytics persistence
@@ -38,13 +38,17 @@ const CACHE_TTL = 2000;
 
 async function loadState() {
   try {
-    const result = await chrome.storage.session.get(['lastActive', 'lastMode', 'lastPhase']);
+    const result = await chrome.storage.session.get([
+      "lastActive",
+      "lastMode",
+      "lastPhase",
+    ]);
     lastActive = result.lastActive || false;
     lastMode = result.lastMode || null;
     lastPhase = result.lastPhase || null;
   } catch (e) {
     // storage.session may not be available in older Chrome versions
-    console.warn('[ForcedFocus] Could not load session state:', e);
+    console.warn("[ForcedFocus] Could not load session state:", e);
   }
 }
 
@@ -58,35 +62,42 @@ async function saveState() {
 
 // ── Utility Functions ─────────────────────────────────────────────────────────
 
-function log(message, level = 'info') {
+function log(message, level = "info") {
   const timestamp = new Date().toISOString();
   console.log(`[ForcedFocus][${timestamp}][${level.toUpperCase()}] ${message}`);
 }
 
 function isErrorRecoverable(error) {
-  if (error instanceof TypeError && error.message.includes('fetch')) {
+  if (error instanceof TypeError && error.message.includes("fetch")) {
     return true;
   }
-  if (error.name === 'AbortError') {
+  if (error.name === "AbortError") {
     return true;
   }
   return false;
 }
 
-async function fetchWithRetry(url, options = {}, maxRetries = MAX_RETRY_ATTEMPTS) {
+async function fetchWithRetry(
+  url,
+  options = {},
+  maxRetries = MAX_RETRY_ATTEMPTS,
+) {
   for (let i = 0; i <= maxRetries; i++) {
     try {
       const response = await fetch(url, {
         ...options,
-        signal: AbortSignal.timeout(3000) // 3s timeout (reduced from 5s to limit P4 blocking)
+        signal: AbortSignal.timeout(3000), // 3s timeout (reduced from 5s to limit P4 blocking)
       });
       return response;
     } catch (error) {
       if (i === maxRetries || !isErrorRecoverable(error)) {
         throw error;
       }
-      log(`Fetch attempt ${i + 1} failed: ${error.message}. Retrying in ${RETRY_DELAY}ms...`, 'warn');
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+      log(
+        `Fetch attempt ${i + 1} failed: ${error.message}. Retrying in ${RETRY_DELAY}ms...`,
+        "warn",
+      );
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
     }
   }
 }
@@ -94,18 +105,21 @@ async function fetchWithRetry(url, options = {}, maxRetries = MAX_RETRY_ATTEMPTS
 // ── Browser Cache Management ──────────────────────────────────────────────────
 
 async function clearBrowserCache() {
-  log('Clearing browser cache and service workers...');
+  log("Clearing browser cache and service workers...");
   try {
-    await chrome.browsingData.remove({
-      "since": 0
-    }, {
-      "cache": true,
-      "cacheStorage": true,
-      "serviceWorkers": true
-    });
-    log('Cache and service workers cleared successfully.');
+    await chrome.browsingData.remove(
+      {
+        since: 0,
+      },
+      {
+        cache: true,
+        cacheStorage: true,
+        serviceWorkers: true,
+      },
+    );
+    log("Cache and service workers cleared successfully.");
   } catch (err) {
-    log(`Failed to clear cache: ${err.message}`, 'error');
+    log(`Failed to clear cache: ${err.message}`, "error");
   }
 }
 
@@ -132,7 +146,7 @@ async function getDynamicRules() {
   try {
     return await chrome.declarativeNetRequest.getDynamicRules();
   } catch (err) {
-    log(`Failed to get dynamic rules: ${err.message}`, 'error');
+    log(`Failed to get dynamic rules: ${err.message}`, "error");
     return [];
   }
 }
@@ -141,11 +155,13 @@ async function updateDynamicRules(addRules = [], removeRuleIds = []) {
   try {
     await chrome.declarativeNetRequest.updateDynamicRules({
       addRules,
-      removeRuleIds
+      removeRuleIds,
     });
-    log(`Updated dynamic rules: ${addRules.length} added, ${removeRuleIds.length} removed`);
+    log(
+      `Updated dynamic rules: ${addRules.length} added, ${removeRuleIds.length} removed`,
+    );
   } catch (err) {
-    log(`Failed to update dynamic rules: ${err.message}`, 'error');
+    log(`Failed to update dynamic rules: ${err.message}`, "error");
     throw err;
   }
 }
@@ -153,9 +169,20 @@ async function updateDynamicRules(addRules = [], removeRuleIds = []) {
 // ── Block Rule Generation ─────────────────────────────────────────────────────
 
 const ALL_RESOURCE_TYPES = [
-  'main_frame', 'sub_frame', 'stylesheet', 'script', 'image',
-  'font', 'object', 'xmlhttprequest', 'ping', 'csp_report',
-  'media', 'websocket', 'webbundle', 'other'
+  "main_frame",
+  "sub_frame",
+  "stylesheet",
+  "script",
+  "image",
+  "font",
+  "object",
+  "xmlhttprequest",
+  "ping",
+  "csp_report",
+  "media",
+  "websocket",
+  "webbundle",
+  "other",
 ];
 
 function generateBlockRules(domains) {
@@ -167,15 +194,18 @@ function generateBlockRules(domains) {
       id: id++,
       priority: 1,
       action: {
-        type: 'redirect',
+        type: "redirect",
         redirect: {
-          url: chrome.runtime.getURL('blocked.html') + '?domain=' + encodeURIComponent(domain)
-        }
+          url:
+            chrome.runtime.getURL("blocked.html") +
+            "?domain=" +
+            encodeURIComponent(domain),
+        },
       },
       condition: {
         urlFilter: `||${domain}`,
-        resourceTypes: ALL_RESOURCE_TYPES
-      }
+        resourceTypes: ALL_RESOURCE_TYPES,
+      },
     });
   }
 
@@ -191,16 +221,16 @@ function generateWhitelistRules(allowedDomains) {
     id: id++,
     priority: 1,
     action: {
-      type: 'redirect',
+      type: "redirect",
       redirect: {
-        url: chrome.runtime.getURL('blocked.html') + '?domain=all'
-      }
+        url: chrome.runtime.getURL("blocked.html") + "?domain=all",
+      },
     },
     condition: {
-      urlFilter: '*',
+      urlFilter: "*",
       resourceTypes: ALL_RESOURCE_TYPES,
-      excludedInitiatorDomains: [chrome.runtime.id]
-    }
+      excludedInitiatorDomains: [chrome.runtime.id],
+    },
   });
 
   // Allow specific domains (higher priority)
@@ -208,24 +238,24 @@ function generateWhitelistRules(allowedDomains) {
     rules.push({
       id: id++,
       priority: 2,
-      action: { type: 'allow' },
+      action: { type: "allow" },
       condition: {
         urlFilter: `||${domain}`,
-        resourceTypes: ALL_RESOURCE_TYPES
-      }
+        resourceTypes: ALL_RESOURCE_TYPES,
+      },
     });
   }
 
   // Always allow localhost for the dashboard
-  ['127.0.0.1', 'localhost'].forEach(host => {
+  ["127.0.0.1", "localhost"].forEach((host) => {
     rules.push({
       id: id++,
       priority: 2,
-      action: { type: 'allow' },
+      action: { type: "allow" },
       condition: {
         urlFilter: `||${host}`,
-        resourceTypes: ALL_RESOURCE_TYPES
-      }
+        resourceTypes: ALL_RESOURCE_TYPES,
+      },
     });
   });
 
@@ -238,18 +268,21 @@ async function clearBlockRules() {
   try {
     const existing = await getDynamicRules();
     if (existing.length > 0) {
-      await updateDynamicRules([], existing.map(r => r.id));
+      await updateDynamicRules(
+        [],
+        existing.map((r) => r.id),
+      );
       log(`Cleared ${existing.length} block rules.`);
     }
   } catch (err) {
-    log(`Failed to clear rules: ${err.message}`, 'error');
+    log(`Failed to clear rules: ${err.message}`, "error");
   }
 }
 
 async function applyBlockRules(domains) {
   await clearBlockRules();
   if (domains.length === 0) {
-    log('No domains to block.');
+    log("No domains to block.");
     return;
   }
   const rules = generateBlockRules(domains);
@@ -261,7 +294,9 @@ async function applyWhitelistRules(allowedDomains) {
   await clearBlockRules();
   const rules = generateWhitelistRules(allowedDomains);
   await updateDynamicRules(rules);
-  log(`Applied whitelist rules: ${allowedDomains.length} allowed, rest blocked.`);
+  log(
+    `Applied whitelist rules: ${allowedDomains.length} allowed, rest blocked.`,
+  );
 }
 
 // ── Session Management ────────────────────────────────────────────────────────
@@ -278,7 +313,7 @@ async function fetchSessionStatus() {
     cacheTimestamp = Date.now();
     return data;
   } catch (error) {
-    log(`Failed to fetch session status: ${error.message}`, 'error');
+    log(`Failed to fetch session status: ${error.message}`, "error");
     throw error;
   }
 }
@@ -291,7 +326,7 @@ async function fetchSessionDomains() {
     }
     return await response.json();
   } catch (error) {
-    log(`Failed to fetch session domains: ${error.message}`, 'error');
+    log(`Failed to fetch session domains: ${error.message}`, "error");
     throw error;
   }
 }
@@ -308,54 +343,62 @@ async function syncBlockRules() {
     connectionAttempts = 0;
     if (isRetrying) {
       isRetrying = false;
-      chrome.alarms.clear('syncRules');
-      chrome.alarms.create('syncRules', { periodInMinutes: 0.05 });
-      log('Server reconnected — restored fast polling.');
+      chrome.alarms.clear("syncRules");
+      chrome.alarms.create("syncRules", { periodInMinutes: 0.05 });
+      log("Server reconnected — restored fast polling.");
     }
 
     // S3: Detect pomodoro phase transitions and broadcast to popup/content scripts
-    const currentPhase = (status.active && status.session_type === 'pomodoro')
-      ? status.pomo_phase : null;
+    const currentPhase =
+      status.active && status.session_type === "pomodoro"
+        ? status.pomo_phase
+        : null;
     if (currentPhase !== lastPhase) {
       lastPhase = currentPhase;
       await saveState();
       // Broadcast to all extension pages (popup, blocked tabs)
-      chrome.runtime.sendMessage({
-        action: 'phaseChanged',
-        phase: currentPhase,
-        active: status.active
-      }).catch(() => {
-        // No receivers (popup closed) — safe to ignore
-      });
-      log(`Phase changed: ${currentPhase || 'none'}`);
+      chrome.runtime
+        .sendMessage({
+          action: "phaseChanged",
+          phase: currentPhase,
+          active: status.active,
+        })
+        .catch(() => {
+          // No receivers (popup closed) — safe to ignore
+        });
+      log(`Phase changed: ${currentPhase || "none"}`);
     }
 
     // During pomodoro break, clear block rules
-    if (status.active && status.session_type === 'pomodoro' && status.pomo_phase === 'break') {
+    if (
+      status.active &&
+      status.session_type === "pomodoro" &&
+      status.pomo_phase === "break"
+    ) {
       if (lastActive) {
         await clearBlockRules();
         lastActive = false;
         lastMode = null;
         await saveState();
       }
-      chrome.action.setBadgeText({ text: 'BRK' });
-      chrome.action.setBadgeBackgroundColor({ color: '#22c55e' });
+      chrome.action.setBadgeText({ text: "BRK" });
+      chrome.action.setBadgeBackgroundColor({ color: "#22c55e" });
       return;
     }
 
-    if (status.active && status.mode === 'blacklist') {
-      if (!lastActive || lastMode !== 'blacklist') {
+    if (status.active && status.mode === "blacklist") {
+      if (!lastActive || lastMode !== "blacklist") {
         const sessionData = await fetchSessionDomains();
         const domains = sessionData.domains || [];
         await applyBlockRules(domains);
         await clearBrowserCache();
         lastActive = true;
-        lastMode = 'blacklist';
+        lastMode = "blacklist";
         await saveState();
       }
-    } else if (status.active && status.mode === 'whitelist') {
-      const isRescue = status.session_type === 'rescue';
-      const modeKey = isRescue ? 'rescue' : 'whitelist';
+    } else if (status.active && status.mode === "whitelist") {
+      const isRescue = status.session_type === "rescue";
+      const modeKey = isRescue ? "rescue" : "whitelist";
       if (!lastActive || lastMode !== modeKey) {
         let allowed = [];
         if (!isRescue) {
@@ -380,21 +423,26 @@ async function syncBlockRules() {
 
     // Update badge
     if (status.active) {
-      chrome.action.setBadgeText({ text: 'ON' });
-      chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+      chrome.action.setBadgeText({ text: "ON" });
+      chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
     } else {
-      chrome.action.setBadgeText({ text: '' });
+      chrome.action.setBadgeText({ text: "" });
     }
-
   } catch (error) {
     connectionAttempts++;
-    log(`Server unreachable (${connectionAttempts} attempts) — keeping existing rules.`, 'warn');
+    log(
+      `Server unreachable (${connectionAttempts} attempts) — keeping existing rules.`,
+      "warn",
+    );
 
     if (connectionAttempts > 10 && !isRetrying) {
       isRetrying = true;
-      log('Connection attempts exceeded threshold. Reducing poll frequency.', 'warn');
-      chrome.alarms.clear('syncRules');
-      chrome.alarms.create('syncRules', { periodInMinutes: 1 });
+      log(
+        "Connection attempts exceeded threshold. Reducing poll frequency.",
+        "warn",
+      );
+      chrome.alarms.clear("syncRules");
+      chrome.alarms.create("syncRules", { periodInMinutes: 1 });
     }
   } finally {
     syncInProgress = false;
@@ -404,27 +452,27 @@ async function syncBlockRules() {
 // ── Extension Lifecycle ───────────────────────────────────────────────────────
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'syncRules') {
+  if (alarm.name === "syncRules") {
     syncBlockRules();
   }
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  log('Extension started');
-  chrome.alarms.create('syncRules', { periodInMinutes: 0.05 });
+  log("Extension started");
+  chrome.alarms.create("syncRules", { periodInMinutes: 0.05 });
   loadState().then(() => syncBlockRules());
 });
 
 chrome.runtime.onInstalled.addListener((details) => {
   log(`Extension installed/updated: ${details.reason}`);
-  chrome.storage.local.get(['analytics'], (result) => {
+  chrome.storage.local.get(["analytics"], (result) => {
     if (!result.analytics) {
       chrome.storage.local.set({ analytics });
     } else {
       analytics = result.analytics;
     }
   });
-  chrome.alarms.create('syncRules', { periodInMinutes: 0.05 });
+  chrome.alarms.create("syncRules", { periodInMinutes: 0.05 });
   loadState().then(() => syncBlockRules());
 });
 
@@ -434,18 +482,18 @@ loadState().then(() => syncBlockRules());
 // ── Message Handling ──────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'getAnalytics') {
-    chrome.storage.local.get(['analytics'], (result) => {
+  if (message.action === "getAnalytics") {
+    chrome.storage.local.get(["analytics"], (result) => {
       sendResponse(result.analytics || analytics);
     });
     return true;
   }
 
-  if (message.action === 'resetAnalytics') {
+  if (message.action === "resetAnalytics") {
     analytics = {
       blockedRequests: 0,
       allowedRequests: 0,
-      startTime: Date.now()
+      startTime: Date.now(),
     };
     chrome.storage.local.set({ analytics });
     sendResponse({ success: true });
@@ -453,25 +501,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   // P3: Serve cached status to reduce daemon requests from multiple blocked tabs
-  if (message.action === 'getTimeRemaining') {
+  if (message.action === "getTimeRemaining") {
     const now = Date.now();
-    if (cachedStatus && (now - cacheTimestamp) < CACHE_TTL && cachedStatus.active) {
+    if (
+      cachedStatus &&
+      now - cacheTimestamp < CACHE_TTL &&
+      cachedStatus.active
+    ) {
       sendResponse({
         remaining: cachedStatus.remaining_seconds || 0,
         phase: cachedStatus.pomo_phase || null,
-        phaseRemaining: cachedStatus.pomo_phase_remaining || null
+        phaseRemaining: cachedStatus.pomo_phase_remaining || null,
       });
     } else {
       fetch(`${API}/api/status`, { signal: AbortSignal.timeout(2000) })
-        .then(res => res.json())
-        .then(data => {
+        .then((res) => res.json())
+        .then((data) => {
           cachedStatus = data;
           cacheTimestamp = Date.now();
           if (data.active) {
             sendResponse({
               remaining: data.remaining_seconds || 0,
               phase: data.pomo_phase || null,
-              phaseRemaining: data.pomo_phase_remaining || null
+              phaseRemaining: data.pomo_phase_remaining || null,
             });
           } else {
             sendResponse({ remaining: 0 });
@@ -483,7 +535,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   // S3: Broadcast phase changes to popup
-  if (message.action === 'forceSync') {
+  if (message.action === "forceSync") {
     syncBlockRules();
     sendResponse({ ok: true });
     return true;
