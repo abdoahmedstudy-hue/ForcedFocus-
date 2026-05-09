@@ -198,7 +198,8 @@ function generateWhitelistRules(allowedDomains) {
     },
     condition: {
       urlFilter: '*',
-      resourceTypes: ALL_RESOURCE_TYPES
+      resourceTypes: ALL_RESOURCE_TYPES,
+      excludedInitiatorDomains: [chrome.runtime.id]
     }
   });
 
@@ -282,15 +283,15 @@ async function fetchSessionStatus() {
   }
 }
 
-async function fetchDomainLists() {
+async function fetchSessionDomains() {
   try {
-    const response = await fetchWithRetry(`${API}/api/lists`);
+    const response = await fetchWithRetry(`${API}/api/session-domains`);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     return await response.json();
   } catch (error) {
-    log(`Failed to fetch domain lists: ${error.message}`, 'error');
+    log(`Failed to fetch session domains: ${error.message}`, 'error');
     throw error;
   }
 }
@@ -344,8 +345,8 @@ async function syncBlockRules() {
 
     if (status.active && status.mode === 'blacklist') {
       if (!lastActive || lastMode !== 'blacklist') {
-        const listsData = await fetchDomainLists();
-        const domains = listsData.lists?.blacklist || [];
+        const sessionData = await fetchSessionDomains();
+        const domains = sessionData.domains || [];
         await applyBlockRules(domains);
         await clearBrowserCache();
         lastActive = true;
@@ -358,8 +359,8 @@ async function syncBlockRules() {
       if (!lastActive || lastMode !== modeKey) {
         let allowed = [];
         if (!isRescue) {
-          const listsData = await fetchDomainLists();
-          allowed = listsData.lists?.whitelist || [];
+          const sessionData = await fetchSessionDomains();
+          allowed = sessionData.domains || [];
         }
         await applyWhitelistRules(allowed);
         await clearBrowserCache();
