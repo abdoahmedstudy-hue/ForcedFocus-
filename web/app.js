@@ -349,16 +349,6 @@ function setActiveUI(status) {
 
     // ── 4. Main Timer Logic ──
     if (isFullyActive) {
-        const intentContainer = document.getElementById('activeIntentContainer');
-        const intentText = document.getElementById('activeIntent');
-        if (intentContainer && intentText) {
-            if (status.intent) {
-                intentText.textContent = status.intent;
-                intentContainer.style.display = 'block';
-            } else {
-                intentContainer.style.display = 'none';
-            }
-        }
         // Mode & expires info
         if (status.session_type === 'rescue') {
             els.modeDisplay.textContent = `Mode: Rescue Throne 🛡️`;
@@ -431,9 +421,6 @@ function setActiveUI(status) {
         
     } else {
         // Idle state
-        const intentContainer = document.getElementById('activeIntentContainer');
-        if (intentContainer) intentContainer.style.display = 'none';
-
         els.modeDisplay.textContent = '—';
         els.expiresDisplay.textContent = '—';
         els.pomoStatus.classList.add('hidden');
@@ -628,9 +615,6 @@ function initEvents() {
     // Start button
     els.btnStart.addEventListener('click', async () => {
         let payload = {};
-        const intentInput = document.getElementById('sessionIntent');
-        const intentVal = intentInput && intentInput.value.trim() !== '' ? intentInput.value.trim() : null;
-
         if (sessionType === 'pomodoro') {
             const totalMin = (pomoFocusMin + pomoBreakMin) * pomoCycles;
             totalSessionSeconds = totalMin * 60;
@@ -640,13 +624,12 @@ function initEvents() {
                 session_type: 'pomodoro',
                 focus_minutes: pomoFocusMin,
                 break_minutes: pomoBreakMin,
-                cycles: pomoCycles,
-                intent: intentVal
+                cycles: pomoCycles
             };
         } else {
             const duration = selectedDuration;
             totalSessionSeconds = duration * 60;
-            payload = { duration, mode: currentMode, session_type: 'standard', intent: intentVal };
+            payload = { duration, mode: currentMode, session_type: 'standard' };
         }
         
         payload.groups = Array.from(selectedGroups);
