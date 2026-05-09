@@ -20,6 +20,10 @@ let scheduleType = "now"; // 'now', 'in', 'at'
 let availableGroups = {};
 let selectedGroups = new Set();
 let apiToken = ""; // Per-launch API token for mutation auth
+let lastActiveState = false;
+let sessionSnapshot = { intent: "", tasks: [] };
+let _lastIntent = null;
+let _lastTasksJSON = null;
 
 // ── HTML Sanitization ────────────────────────────────────────────────────────
 
@@ -259,6 +263,20 @@ function setActiveUI(status) {
   const isPrimaryScheduled = !active && hasSchedules;
   const isFullyActive = active;
 
+  // Recap detection: Active -> Idle
+  if (lastActiveState === true && isFullyActive === false) {
+    // Session just ended
+    showRecap(sessionSnapshot);
+  }
+  
+  if (isFullyActive) {
+    // Capture snapshot while active
+    sessionSnapshot.intent = status.intent || "";
+    sessionSnapshot.tasks = status.intent_tasks || [];
+  }
+
+  lastActiveState = isFullyActive;
+
   // ── Centralized Reset ──
   // Clear all potential state classes before applying current state
   els.statusBadge.classList.remove("active", "break", "pulse");
@@ -391,15 +409,29 @@ function setActiveUI(status) {
   if (isFullyActive) {
     const intentContainer = document.getElementById("activeIntentContainer");
     const intentDisplay = document.getElementById("activeIntentDisplay");
+    const intentTasksContainer = document.getElementById("activeIntentTasks");
 
     if (intentContainer) {
       if (status.intent) {
-        intentContainer.style.display = "block";
-        if (intentDisplay) {
+        if (intentContainer.style.display !== "block") {
+          intentContainer.style.display = "block";
+        }
+        if (intentDisplay && _lastIntent !== status.intent) {
           intentDisplay.textContent = status.intent;
+          _lastIntent = status.intent;
+        }
+        
+        const tasksJSON = JSON.stringify(status.intent_tasks || []);
+        if (intentTasksContainer && _lastTasksJSON !== tasksJSON) {
+          renderIntentTasks(intentTasksContainer, status.intent_tasks || []);
+          _lastTasksJSON = tasksJSON;
         }
       } else {
-        intentContainer.style.display = "none";
+        if (intentContainer.style.display !== "none") {
+          intentContainer.style.display = "none";
+        }
+        _lastIntent = null;
+        _lastTasksJSON = null;
       }
     }
     // Mode & expires info
@@ -562,6 +594,133 @@ function renderDomainList(container, domains, listName) {
   });
 }
 
+// ── Intent Tasks ─────────────────────────────────────────────────────────────
+
+function renderIntentTasks(container, tasks) {
+  if (!tasks || tasks.length === 0) {
+    container.innerHTML = "";
+    return;
+  }
+  
+  const ul = document.createElement("ul");
+  ul.dir = "auto";
+  ul.style.listStyle = "none";
+  ul.style.padding = "0";
+  ul.style.margin = "0";
+  ul.style.display = "flex";
+  ul.style.flexDirection = "column";
+  ul.style.gap = "8px";
+  ul.style.width = "100%";
+  
+  tasks.forEach((task, index) => {
+    const li = document.createElement("li");
+    li.dir = "auto";
+    li.className = "intent-task-item";
+    li.style.display = "flex";
+    li.style.alignItems = "flex-start";
+    li.style.gap = "10px";
+    li.style.margin = "2px 0";
+    li.style.width = "100%";
+    li.style.boxSizing = "border-box";
+    
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "custom-checkbox";
+    checkbox.checked = task.completed;
+    
+    checkbox.addEventListener("change", async (e) => {
+      task.completed = e.target.checked;
+      label.style.textDecoration = task.completed ? "line-through" : "none";
+      label.style.opacity = task.completed ? "0.5" : "1";
+      
+      try {
+        await api("POST", "/api/intent", { 
+          intent: document.getElementById("activeIntentDisplay").textContent, 
+          intent_tasks: tasks 
+        });
+      } catch (err) {
+        console.error("Failed to update task status", err);
+      }
+    });
+    
+    const label = document.createElement("label");
+    label.dir = "auto";
+    label.textContent = task.text;
+    label.style.cursor = "pointer";
+    label.style.flex = "1";
+    label.style.lineHeight = "1.4";
+    label.style.textDecoration = task.completed ? "line-through" : "none";
+    label.style.opacity = task.completed ? "0.5" : "1";
+    
+    label.addEventListener("click", (e) => {
+      e.preventDefault();
+      checkbox.click();
+    });
+    
+    li.appendChild(checkbox);
+    li.appendChild(label);
+    ul.appendChild(li);
+  });
+  
+  container.innerHTML = "";
+  container.appendChild(ul);
+}
+
+function showRecap(data) {
+  const modal = document.getElementById("recapModal");
+  const intentDisplay = document.getElementById("recapIntentDisplay");
+  const tasksList = document.getElementById("recapTasksList");
+  const tasksSection = document.getElementById("recapTasksSection");
+  const title = document.getElementById("recapTitle");
+  
+  if (!modal || !intentDisplay || !tasksList) return;
+  
+  intentDisplay.textContent = data.intent || "No goal specified";
+  tasksList.innerHTML = "";
+  
+  const tasks = data.tasks || [];
+  if (tasks.length === 0) {
+    tasksSection.style.display = "none";
+    title.textContent = "Session Complete!";
+  } else {
+    tasksSection.style.display = "block";
+    const completedCount = tasks.filter(t => t.completed).length;
+    const totalCount = tasks.length;
+    
+    if (completedCount === totalCount) {
+      title.textContent = "Perfect Session! 🏆";
+    } else if (completedCount > 0) {
+      title.textContent = "Great Progress! 👏";
+    } else {
+      title.textContent = "Session Finished";
+    }
+    
+    tasks.forEach(task => {
+      const item = document.createElement("div");
+      item.className = `recap-task-item ${task.completed ? "completed" : ""}`;
+      item.dir = "auto";
+      
+      const check = document.createElement("div");
+      check.className = `recap-check ${task.completed ? "done" : "todo"}`;
+      check.textContent = task.completed ? "✓" : "";
+      
+      const text = document.createElement("div");
+      text.className = "recap-task-text";
+      text.textContent = task.text;
+      
+      item.appendChild(check);
+      item.appendChild(text);
+      tasksList.appendChild(item);
+    });
+  }
+  
+  modal.classList.remove("hidden");
+}
+
+document.getElementById("btnContinueRecap")?.addEventListener("click", () => {
+  document.getElementById("recapModal").classList.add("hidden");
+});
+
 // ── Event Handlers ───────────────────────────────────────────────────────────
 
 function initEvents() {
@@ -698,9 +857,11 @@ function initEvents() {
 
     const intentModal = $("#intentModal");
     const intentInput = $("#intentModalInput");
+    const intentTasksInput = $("#intentTasksInput");
     if (intentModal && intentInput) {
       intentModal.classList.remove("hidden");
       intentInput.value = "";
+      if (intentTasksInput) intentTasksInput.value = "";
       intentInput.focus();
     }
   });
@@ -731,6 +892,12 @@ function initEvents() {
       $("#intentModal").classList.add("hidden");
       let payload = {};
       const intentVal = $("#intentModalInput").value.trim();
+      const intentTasksRaw = $("#intentTasksInput") ? $("#intentTasksInput").value.trim() : "";
+      const intentTasks = intentTasksRaw
+        .split("\n")
+        .map(t => t.trim().replace(/^[-*•]\s*/, "").trim())
+        .filter(t => t.length > 0)
+        .map(t => ({ text: t, completed: false }));
 
       if (sessionType === "pomodoro") {
         const totalMin = (pomoFocusMin + pomoBreakMin) * pomoCycles;
@@ -752,6 +919,9 @@ function initEvents() {
       payload.groups = Array.from(selectedGroups);
       if (intentVal) {
         payload.intent = intentVal;
+      }
+      if (intentTasks.length > 0) {
+        payload.intent_tasks = intentTasks;
       }
 
       if (scheduleType === "in") {

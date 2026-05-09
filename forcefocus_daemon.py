@@ -544,6 +544,8 @@ class ForcedFocusDaemon:
         self.pomo_current_cycle: int = 0
         self.pomo_phase: str = "focus"
         self.pomo_phase_expiry: datetime | None = None
+        self.intent: str | None = None
+        self.intent_tasks: list = []
         self.lock = threading.Lock()
         self._passphrase_attempts = 0
         self._last_attempt_time = 0.0
@@ -945,6 +947,8 @@ class ForcedFocusDaemon:
         self.session_expiry = expiry
         self.remaining_seconds = remaining
         self.session_type = data.get("session_type", "standard")
+        self.intent = data.get("intent", None)
+        self.intent_tasks = data.get("intent_tasks", [])
         self.pomo_focus_minutes = data.get("pomo_focus_minutes", 0)
         self.pomo_break_minutes = data.get("pomo_break_minutes", 0)
         self.pomo_total_cycles = data.get("pomo_total_cycles", 0)
@@ -1031,16 +1035,21 @@ class ForcedFocusDaemon:
             "Resuming %s session — %d min remaining.", self.mode, int(remaining / 60)
         )
 
-    def _set_intent(self, intent: str) -> dict:
+    def _set_intent(self, cmd: dict) -> dict:
+        intent = cmd.get("intent")
+        intent_tasks = cmd.get("intent_tasks")
         with self.lock:
             if not self.active:
                 return {
                     "status": "error",
                     "message": "No active session to set intent for.",
                 }
-            self.intent = intent.strip() if intent else None
-            self._save_session()
-            logging.info("Session intent updated to: %s", self.intent)
+            if intent is not None:
+                self.intent = intent.strip() if intent else None
+            if intent_tasks is not None:
+                self.intent_tasks = intent_tasks
+            self._persist_session_lock()
+            logging.info("Session intent updated.")
             return {"status": "ok", "message": "Intent updated."}
 
     def _start_session(self, cmd: dict) -> dict:
@@ -1161,6 +1170,9 @@ class ForcedFocusDaemon:
             self.intent = (
                 cmd.get("intent", None) or self.intent
             )  # Keep existing intent if set via /api/intent and not provided in start
+            self.intent_tasks = (
+                cmd.get("intent_tasks", None) or getattr(self, "intent_tasks", [])
+            )
             self.session_expiry = datetime.now() + timedelta(minutes=duration_minutes)
             self.active = True
             self.total_duration_seconds = duration_minutes * 60
@@ -1429,6 +1441,7 @@ class ForcedFocusDaemon:
                 "session_type": self.session_type,
                 "schedules": schedules_res,
                 "intent": self.intent,
+                "intent_tasks": getattr(self, "intent_tasks", []),
             }
             if self.session_type == "pomodoro":
                 result["pomo_phase"] = self.pomo_phase
@@ -1796,7 +1809,7 @@ class ForcedFocusDaemon:
             result.pop()
         return "\n".join(result)
 
-    def _send_mac_notification(self, title: str, message: str, subtitle: str = None):
+    def _send_mac_notification(self, title: str, message: str, subtitle: str = None, category: str = "end"):
         try:
             safe_title = title.replace('"', '\\"')
             safe_message = message.replace('"', '\\"')
@@ -1804,7 +1817,12 @@ class ForcedFocusDaemon:
             if subtitle:
                 safe_sub = subtitle.replace('"', '\\"')
                 script += f' subtitle "{safe_sub}"'
-            script += ' sound name "Glass"'
+            
+            # Sound logic: Sync with settings selection
+            setting_key = f"sound_{category.lower()}"
+            sound_file = self.settings.get(setting_key, "Glass")
+            sound_name = sound_file.replace(".mp3", "")
+            script += f' sound name "{sound_name}"'
             
             # Try to link with Mac Menu app
             app_script = f'tell application "ForcedFocusBar" to {script}'
@@ -1873,6 +1891,7 @@ class ForcedFocusDaemon:
             self._send_mac_notification(
                 "Break Started",
                 f"Take a {self.pomo_break_minutes}m break! Good job focusing.",
+                category="break"
             )
             logging.info(
                 "Pomodoro: cycle %d focus ended. Break for %dm.",
@@ -1901,6 +1920,7 @@ class ForcedFocusDaemon:
             self._send_mac_notification(
                 "Focus Time",
                 f"Cycle {self.pomo_current_cycle} of {self.pomo_total_cycles} has started.",
+                category="start"
             )
             logging.info(
                 "Pomodoro: cycle %d/%d focus started.",
@@ -1911,8 +1931,20 @@ class ForcedFocusDaemon:
     def _cleanup_session(self):
         logging.info("Cleaning up session (mode=%s)...", self.mode)
         self._play_sound("end")
+        
+        # Build recap message for notification
+        done = [t["text"] for t in self.intent_tasks if t.get("completed")]
+        todo = [t["text"] for t in self.intent_tasks if not t.get("completed")]
+        
+        recap_msg = "Great job! Your ForcedFocus session has ended."
+        if done or todo:
+            recap_msg = f"Done: {len(done)} | Remaining: {len(todo)}"
+            if done:
+                recap_msg += f"\n✓ {', '.join(done[:2])}"
+                if len(done) > 2: recap_msg += "..."
+        
         self._send_mac_notification(
-            "Session Complete", "Great job! Your ForcedFocus session has ended."
+            "Session Complete", recap_msg, subtitle=self.intent, category="end"
         )
         was_whitelist = self.mode == "whitelist"
 
@@ -2281,6 +2313,8 @@ class ForcedFocusDaemon:
             else:
                 data["active_domains"] = self.active_domains
             data["session_base_domains"] = getattr(self, "session_base_domains", [])
+            data["intent"] = getattr(self, "intent", None)
+            data["intent_tasks"] = getattr(self, "intent_tasks", [])
 
         try:
             self._atomic_write_json(SESSION_LOCK, data)
@@ -2537,9 +2571,16 @@ class ForcedFocusDaemon:
                     self._mono_last_intent_notif = now_mono
                 elif now_mono - last_notif >= interval:
                     self._mono_last_intent_notif = now_mono
-                    self._send_mac_notification(
-                        "Focus Reminder", f"Target: {self.intent}"
-                    )
+                    
+                    # Build task status summary
+                    done = [t for t in self.intent_tasks if t.get("completed")]
+                    total = len(self.intent_tasks)
+                    
+                    msg = f"Target: {self.intent}"
+                    if total > 0:
+                        msg += f"\nProgress: {len(done)}/{total} tasks done"
+                        
+                    self._send_mac_notification("Focus Reminder", msg, category="reminder")
 
             self._wd_persist_counter += 1
             if self._wd_persist_counter >= 120:  # 120 * 250ms = 30s
@@ -2929,6 +2970,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
                 "cycles": body.get("cycles", 4),
                 "groups": body.get("groups", []),
                 "intent": body.get("intent", ""),
+                "intent_tasks": body.get("intent_tasks", []),
             }
             if "schedule_in" in body:
                 cmd["schedule_in_minutes"] = body["schedule_in"]
@@ -2936,7 +2978,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
                 cmd["schedule_at_time"] = body["schedule_at"]
             self._send_json(self.server.daemon_ref._start_session(cmd))
         elif path == "/api/intent":
-            self._send_json(self.server.daemon_ref._set_intent(body.get("intent", "")))
+            self._send_json(self.server.daemon_ref._set_intent(body))
         elif path == "/api/settings":
             self._send_json(self.server.daemon_ref._cmd_save_settings(body))
         elif path == "/api/upload-sound":

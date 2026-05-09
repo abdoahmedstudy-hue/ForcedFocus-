@@ -7,8 +7,8 @@
   --bg-secondary: #08080f;
   --bg-card: rgba(12, 12, 25, 0.6);
   --bg-card-hover: rgba(18, 18, 35, 0.7);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-active: rgba(99, 102, 241, 0.4);
+  --border: rgba(99, 102, 241, 0.15);
+  --border-active: rgba(168, 85, 247, 0.4);
   --text-primary: #fcfcfd;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
@@ -26,7 +26,8 @@
   --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.5);
   --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
   --glass: blur(24px) saturate(160%);
-  --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+  --transition-spring: 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
   color-scheme: dark;
 }
 
@@ -57,11 +58,17 @@ body {
   animation: pageFadeIn 0.5s ease-out;
 }
 
+@keyframes recapSlideIn {
+  0% { opacity: 0; transform: translateY(15px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 @keyframes pageFadeIn {
   from {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -114,6 +121,7 @@ body::after {
   from {
     transform: translate(0, 0) scale(1);
   }
+
   to {
     transform: translate(-10%, 5%) scale(1.1);
   }
@@ -149,13 +157,13 @@ body::after {
   gap: 24px;
 }
 
-.controls-section > .card,
-.controls-section > .action-buttons,
-.controls-section > .unlock-info {
+.controls-section>.card,
+.controls-section>.action-buttons,
+.controls-section>.unlock-info {
   width: 100%;
 }
 
-.controls-section > .action-buttons {
+.controls-section>.action-buttons {
   margin-top: 8px;
 }
 
@@ -311,6 +319,7 @@ body::after {
     transform: scale(1);
     opacity: 0.4;
   }
+
   100% {
     transform: scale(2.5);
     opacity: 0;
@@ -322,11 +331,13 @@ body::after {
 }
 
 @keyframes logoPulse {
+
   0%,
   100% {
     transform: scale(1);
     filter: brightness(1);
   }
+
   50% {
     transform: scale(1.05);
     filter: brightness(1.2) drop-shadow(0 0 15px var(--accent-blue));
@@ -409,7 +420,7 @@ body::after {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 36px;
+  margin-bottom: 24px;
 }
 
 @keyframes morph {
@@ -435,6 +446,7 @@ body::after {
 }
 
 @keyframes liquidPulse {
+
   0%,
   100% {
     filter: drop-shadow(0 0 15px rgba(99, 102, 241, 0.4)) blur(0px);
@@ -449,11 +461,9 @@ body::after {
   position: absolute;
   inset: -15px;
   /* Larger than the ring */
-  background: linear-gradient(
-    45deg,
-    rgba(99, 102, 241, 0.08),
-    rgba(139, 92, 246, 0.12)
-  );
+  background: linear-gradient(45deg,
+      rgba(99, 102, 241, 0.08),
+      rgba(139, 92, 246, 0.12));
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
@@ -568,12 +578,10 @@ body::after {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.1),
-    transparent
-  );
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.1),
+      transparent);
 }
 
 .card:hover {
@@ -802,9 +810,60 @@ body::after {
   color: var(--text-muted);
 }
 
+/* ── Custom Checkbox ─────────────────────────────────────────────────────── */
+
+.custom-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-active);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  position: relative;
+  transition: var(--transition);
+  margin-top: 2px;
+  flex-shrink: 0;
+  outline: none;
+}
+
+.custom-checkbox:hover {
+  border-color: var(--accent-blue);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.custom-checkbox:checked {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+}
+
+.custom-checkbox:checked::after {
+  content: "✓";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.intent-task-item {
+  transition: var(--transition);
+  padding: 4px 8px;
+  border-radius: 8px;
+  animation: recapSlideIn 0.4s ease-out backwards;
+}
+
+.intent-task-item:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 /* ── Schedule Inputs ─────────────────────────────────────────────────────── */
 
-.schedule-inputs > div {
+.schedule-inputs>div {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -874,8 +933,7 @@ body::after {
   outline: none;
 }
 
-.schedule-inputs
-  input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+.schedule-inputs input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
   opacity: 0.8;
   transition: var(--transition);
@@ -884,8 +942,7 @@ body::after {
   /* Circle icon wrapper */
 }
 
-.schedule-inputs
-  input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+.schedule-inputs input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
   background: rgba(255, 255, 255, 0.15);
   transform: scale(1.1);
@@ -932,21 +989,16 @@ body::after {
 
 @keyframes splashPulse {
   0% {
-    box-shadow:
-      0 0 0 0 rgba(99, 102, 241, 0.7),
-      0 4px 20px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.6), 0 4px 20px rgba(99, 102, 241, 0.2);
+    transform: scale(1);
   }
-
-  70% {
-    box-shadow:
-      0 0 0 15px rgba(99, 102, 241, 0),
-      0 4px 20px rgba(99, 102, 241, 0.3);
+  50% {
+    box-shadow: 0 0 0 10px rgba(99, 102, 241, 0), 0 8px 30px rgba(99, 102, 241, 0.3);
+    transform: scale(1.02);
   }
-
   100% {
-    box-shadow:
-      0 0 0 0 rgba(99, 102, 241, 0),
-      0 4px 20px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0), 0 4px 20px rgba(99, 102, 241, 0.2);
+    transform: scale(1);
   }
 }
 
@@ -966,12 +1018,10 @@ body::after {
   left: -100%;
   width: 50%;
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.4),
-    transparent
-  );
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.4),
+      transparent);
   transform: skewX(-20deg);
   transition: 0.5s;
 }
@@ -1042,11 +1092,9 @@ body::after {
 }
 
 .list-card {
-  background: linear-gradient(
-    145deg,
-    rgba(25, 25, 45, 0.6),
-    rgba(10, 10, 20, 0.8)
-  );
+  background: linear-gradient(145deg,
+      rgba(25, 25, 45, 0.6),
+      rgba(10, 10, 20, 0.8));
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.05),
@@ -1286,6 +1334,87 @@ body::after {
   text-align: center;
 }
 
+/* ── Recap Specifics ── */
+.recap-check.done {
+  background: var(--success);
+  color: white;
+  animation: checkPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes checkPop {
+  0% { transform: scale(0); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.recap-task-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  border: 1px solid transparent;
+  transition: var(--transition);
+  animation: itemSlideIn 0.3s ease forwards;
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+@keyframes itemSlideIn {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.recap-task-item:nth-child(1) { animation-delay: 0.1s; }
+.recap-task-item:nth-child(2) { animation-delay: 0.2s; }
+.recap-task-item:nth-child(3) { animation-delay: 0.3s; }
+.recap-task-item:nth-child(4) { animation-delay: 0.4s; }
+.recap-task-item:nth-child(n+5) { animation-delay: 0.5s; }
+
+.recap-task-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border);
+}
+
+.recap-task-item.completed {
+  border-color: rgba(34, 197, 94, 0.2);
+  background: rgba(34, 197, 94, 0.03);
+}
+
+.recap-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.recap-check.done {
+  background: var(--success);
+  color: white;
+}
+
+.recap-check.todo {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: transparent;
+}
+
+.recap-task-text {
+  font-size: 14px;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.recap-task-item.completed .recap-task-text {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
 /* ── Toast ───────────────────────────────────────────────────────────────── */
 
 .toast {
@@ -1347,6 +1476,7 @@ body::after {
   background: rgba(99, 102, 241, 0.05);
   color: var(--text-primary);
 }
+
 .toast.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
@@ -1558,7 +1688,8 @@ body::after {
   outline: none;
   cursor: pointer;
   transition: var(--transition);
-  appearance: none; /* Hide default arrow to make it look cleaner */
+  appearance: none;
+  /* Hide default arrow to make it look cleaner */
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23fcfcfd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
@@ -1924,47 +2055,56 @@ body::after {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.toggle-switch input:checked + .toggle-slider {
+.toggle-switch input:checked+.toggle-slider {
   background-color: var(--accent-blue);
   border-color: var(--accent-blue);
 }
 
-.toggle-switch input:focus + .toggle-slider {
+.toggle-switch input:focus+.toggle-slider {
   box-shadow: 0 0 1px var(--accent-blue);
 }
 
-.toggle-switch input:checked + .toggle-slider:before {
+.toggle-switch input:checked+.toggle-slider:before {
   transform: translateX(15px);
 }
 
 /* ── Accessibility: Reduced Motion ──────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
+
   body::before,
   body::after {
     animation: none;
   }
+
   .status-dot::after {
     animation: none;
   }
+
   .timer-blob {
     animation: none;
   }
+
   .btn-start {
     animation: none;
   }
+
   .logo-icon.pulse {
     animation: none;
   }
+
   .tab-pane {
     animation: none;
   }
+
   .domain-list li {
     animation: none;
   }
+
   .modal {
     animation: none;
   }
+
   .modal-overlay {
     animation: none;
   }

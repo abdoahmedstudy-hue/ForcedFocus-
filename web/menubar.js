@@ -243,6 +243,11 @@ function renderStatus(data) {
       if (data.intent) {
         intentContainer.classList.remove("hidden");
         intentDisplay.textContent = data.intent;
+        
+        const intentTasksContainer = document.getElementById("activeIntentTasks");
+        if (intentTasksContainer) {
+          renderIntentTasks(intentTasksContainer, data.intent_tasks || []);
+        }
       } else {
         intentContainer.classList.add("hidden");
       }
@@ -258,6 +263,78 @@ function renderStatus(data) {
     els.badge.classList.remove("active");
     if (countdownInterval) clearInterval(countdownInterval);
   }
+}
+
+// ── Intent Tasks ─────────────────────────────────────────────────────────────
+
+function renderIntentTasks(container, tasks) {
+  if (!tasks || tasks.length === 0) {
+    container.innerHTML = "";
+    return;
+  }
+  
+  const ul = document.createElement("ul");
+  ul.dir = "auto";
+  ul.style.listStyle = "none";
+  ul.style.padding = "0";
+  ul.style.margin = "0";
+  ul.style.display = "flex";
+  ul.style.flexDirection = "column";
+  ul.style.gap = "8px";
+  ul.style.width = "100%";
+  
+  tasks.forEach((task, index) => {
+    const li = document.createElement("li");
+    li.dir = "auto";
+    li.className = "intent-task-item";
+    li.style.display = "flex";
+    li.style.alignItems = "flex-start";
+    li.style.gap = "8px";
+    li.style.margin = "1px 0";
+    li.style.width = "100%";
+    li.style.boxSizing = "border-box";
+    
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "custom-checkbox";
+    checkbox.checked = task.completed;
+    
+    checkbox.addEventListener("change", async (e) => {
+      task.completed = e.target.checked;
+      label.style.textDecoration = task.completed ? "line-through" : "none";
+      label.style.opacity = task.completed ? "0.5" : "1";
+      
+      try {
+        await api("POST", "/api/intent", { 
+          intent: document.getElementById("activeIntentDisplay").textContent, 
+          intent_tasks: tasks 
+        });
+      } catch (err) {
+        console.error("Failed to update task status", err);
+      }
+    });
+    
+    const label = document.createElement("label");
+    label.dir = "auto";
+    label.textContent = task.text;
+    label.style.cursor = "pointer";
+    label.style.flex = "1";
+    label.style.lineHeight = "1.4";
+    label.style.textDecoration = task.completed ? "line-through" : "none";
+    label.style.opacity = task.completed ? "0.5" : "1";
+    
+    label.addEventListener("click", (e) => {
+      e.preventDefault();
+      checkbox.click();
+    });
+    
+    li.appendChild(checkbox);
+    li.appendChild(label);
+    ul.appendChild(li);
+  });
+  
+  container.innerHTML = "";
+  container.appendChild(ul);
 }
 
 async function fetchGroups() {
@@ -369,6 +446,8 @@ function initEvents() {
     els.idleState.classList.add("hidden");
     els.intentState.classList.remove("hidden");
     els.intentPromptInput.value = "";
+    const intentTasksInput = document.getElementById("intentTasksInput");
+    if (intentTasksInput) intentTasksInput.value = "";
     els.intentPromptInput.focus();
   });
 
@@ -397,6 +476,18 @@ function initEvents() {
     const intentStr = els.intentPromptInput.value.trim();
     if (intentStr) {
       payload.intent = intentStr;
+    }
+    
+    const intentTasksInput = document.getElementById("intentTasksInput");
+    const intentTasksRaw = intentTasksInput ? intentTasksInput.value.trim() : "";
+    const intentTasks = intentTasksRaw
+      .split("\n")
+      .map(t => t.trim().replace(/^[-*•]\s*/, "").trim())
+      .filter(t => t.length > 0)
+      .map(t => ({ text: t, completed: false }));
+
+    if (intentTasks.length > 0) {
+      payload.intent_tasks = intentTasks;
     }
 
     if (currentType === "standard") {

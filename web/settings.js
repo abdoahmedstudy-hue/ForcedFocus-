@@ -180,17 +180,17 @@ function renderSettings() {
   if (intentEnabled)
     intentEnabled.checked = settings.intent_notification_enabled !== false;
   if (intentInterval)
-    intentInterval.value = settings.intent_notification_interval || 15;
+    intentInterval.value = String(settings.intent_notification_interval || 15);
 }
 
 async function saveSettings() {
-  const btn = document.querySelector(".settings-footer .primary-btn");
+  const btn = els.btnSaveSettings;
   if (btn) btn.disabled = true;
   const originalText = btn ? btn.textContent : "";
   if (btn) btn.textContent = "Saving...";
 
   try {
-    const newSettings = {};
+    const newSettings = { ...settings };
     els.settingsGrid.querySelectorAll("select").forEach((sel) => {
       newSettings[sel.dataset.key] = sel.value;
     });
@@ -204,6 +204,7 @@ async function saveSettings() {
 
     const res = await api("POST", "/api/settings", { settings: newSettings });
     if (res.status === "ok") {
+      settings = newSettings; // Update local state
       showToast("Settings saved.");
     } else {
       showToast("Error: " + res.message);

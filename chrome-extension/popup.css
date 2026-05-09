@@ -678,3 +678,53 @@ body::after {
 .hidden {
   display: none !important;
 }
+
+/* ── Custom Checkbox ──────────────────────── */
+
+.custom-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border-active);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  position: relative;
+  transition: var(--transition);
+  margin-top: 2px;
+  flex-shrink: 0;
+  outline: none;
+}
+
+.custom-checkbox:hover {
+  border-color: var(--accent-blue);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.custom-checkbox:checked {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.3);
+}
+
+.custom-checkbox:checked::after {
+  content: "✓";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.intent-task-item {
+  transition: var(--transition);
+  padding: 3px 6px;
+  border-radius: 6px;
+}
+
+.intent-task-item:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
