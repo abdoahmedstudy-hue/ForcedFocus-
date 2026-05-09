@@ -1,0 +1,3 @@
+## 2026-05-09 - [Mock macOS UI Interactions in Tests]
+**Learning:** Methods in `forcefocus_daemon.py` that trigger macOS UI interactions, such as `_send_mac_notification` (which invokes `osascript`), will cause tests to fail with 'No such file or directory' errors or hang in headless environments if not properly mocked.
+**Action:** Always patch these methods (e.g., `@patch('forcefocus_daemon.ForcedFocusDaemon._send_mac_notification')`) when testing daemon lifecycle functions that might trigger notifications, and ensure the patch argument is added to the test method signature in the correct order.

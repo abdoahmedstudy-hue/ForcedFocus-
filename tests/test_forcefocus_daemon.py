@@ -98,8 +98,9 @@ class TestForcedFocusDaemon(unittest.TestCase):
     @patch('forcefocus_daemon.subprocess.run', side_effect=Exception("Test cleanup exception"))
     @patch('forcefocus_daemon.logging.error')
     @patch('forcefocus_daemon.ForcedFocusDaemon._play_sound')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._send_mac_notification')
     @patch('forcefocus_daemon.SESSION_LOCK')
-    def test_cleanup_session_error_handling(self, mock_lock, mock_sound, mock_log_error, mock_run):
+    def test_cleanup_session_error_handling(self, mock_lock, mock_notif, mock_sound, mock_log_error, mock_run):
         self.daemon.active = True
         self.daemon.mode = "blacklist"
         self.daemon.session_expiry = datetime.datetime.now()
@@ -221,8 +222,9 @@ class TestForcedFocusDaemon(unittest.TestCase):
         mock_logging_error.assert_called_once()
         self.assertIn("Failed to persist session.lock", mock_logging_error.call_args[0][0])
     @patch('forcefocus_daemon.logging.info')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._send_mac_notification')
     @patch('forcefocus_daemon.SESSION_LOCK')
-    def test_restore_session_no_lock(self, mock_session_lock, mock_logging_info):
+    def test_restore_session_no_lock(self, mock_session_lock, mock_notif, mock_logging_info):
         # We need to unmock _restore_session just for these tests, as it was mocked in setUp
         with patch('forcefocus_daemon.ForcedFocusDaemon._load_settings', return_value={}):
             daemon = ForcedFocusDaemon()
@@ -233,8 +235,9 @@ class TestForcedFocusDaemon(unittest.TestCase):
             mock_session_lock.read_text.assert_not_called()
 
     @patch('forcefocus_daemon.logging.error')
+    @patch('forcefocus_daemon.ForcedFocusDaemon._send_mac_notification')
     @patch('forcefocus_daemon.SESSION_LOCK')
-    def test_restore_session_corrupt_lock(self, mock_session_lock, mock_logging_error):
+    def test_restore_session_corrupt_lock(self, mock_session_lock, mock_notif, mock_logging_error):
         with patch('forcefocus_daemon.ForcedFocusDaemon._load_settings', return_value={}):
             daemon = ForcedFocusDaemon()
             mock_session_lock.exists.return_value = True

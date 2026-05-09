@@ -407,6 +407,7 @@ class ForcedFocusDaemon:
         self.pomo_current_cycle: int = 0
         self.pomo_phase: str = "focus"
         self.pomo_phase_expiry: datetime | None = None
+        self.intent = None
         self.lock = threading.Lock()
         self._passphrase_attempts = 0
         self._last_attempt_time = 0.0
