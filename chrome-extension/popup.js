@@ -75,7 +75,7 @@ function renderStatus(data) {
     const active = data.active;
 
     // Badge
-    $('#badge').textContent = active ? data.mode.toUpperCase() : 'Idle';
+    $('#badge').textContent = active ? (data.session_type === 'rescue' ? 'RESCUE' : data.mode.toUpperCase()) : 'Idle';
     $('#badge').classList.toggle('active', active);
 
     // Controls
@@ -96,6 +96,13 @@ function renderStatus(data) {
             $('#infoPhase').innerHTML = `${dot} ${data.pomo_phase.toUpperCase()}`;
             $('#infoCycle').textContent = `${data.pomo_current_cycle} / ${data.pomo_total_cycles}`;
             
+            if (data.pomo_phase_expiry_time) {
+                $('#pomoNextRow').style.display = 'flex';
+                $('#infoPomoNext').textContent = `${data.pomo_phase_expiry_time}`;
+            } else {
+                $('#pomoNextRow').style.display = 'none';
+            }
+            
             if (data.pomo_phase === 'break') {
                 $('.timer-ring').classList.add('break');
                 $('#timerLabel').textContent = 'BREAK';
@@ -109,10 +116,15 @@ function renderStatus(data) {
             $('#infoType').textContent = 'Standard';
             $('#pomoPhaseRow').style.display = 'none';
             $('#pomoCycleRow').style.display = 'none';
+            $('#pomoNextRow').style.display = 'none';
             $('.timer-ring').classList.remove('break');
         }
 
-        $('#infoMode').textContent = data.mode;
+        if (data.session_type === 'rescue') {
+            $('#infoMode').textContent = 'Rescue Throne 🛡️';
+        } else {
+            $('#infoMode').textContent = data.mode;
+        }
         $('#infoExpires').textContent = data.expires_at;
 
         if (data.pending_unlock) {
@@ -236,6 +248,23 @@ function initEvents() {
         $('#btnStart').textContent = '▶ Start Blocking';
         if (res.status === 'ok') refresh();
     });
+
+    // Rescue
+    const btnRescue = $('#btnRescue');
+    if (btnRescue) {
+        btnRescue.addEventListener('click', async () => {
+            btnRescue.textContent = '⏳ Activating...';
+            const dur = parseInt($('#rescueDuration').value, 10) || 10;
+            const payload = {
+                duration: dur,
+                mode: 'whitelist',
+                session_type: 'rescue'
+            };
+            const res = await api('POST', '/api/start', payload);
+            btnRescue.innerHTML = '⚡ Activate Rescue';
+            if (res.status === 'ok') refresh();
+        });
+    }
 
     // Stop → show dialog
     $('#btnStop').addEventListener('click', () => {

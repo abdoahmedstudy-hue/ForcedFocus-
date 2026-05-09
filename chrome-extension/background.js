@@ -41,14 +41,19 @@ async function syncBlockRules() {
                 lastMode = 'blacklist';
             }
         } else if (status.active && status.mode === 'whitelist') {
-            // Whitelist mode — block everything EXCEPT whitelisted domains
-            if (!lastActive || lastMode !== 'whitelist') {
-                const listsRes = await fetch(`${API}/api/lists`, { signal: AbortSignal.timeout(2000) });
-                const listsData = await listsRes.json();
-                const allowed = listsData.lists?.whitelist || [];
+            // Whitelist mode — block everything EXCEPT whitelisted domains (if rescue, allow nothing)
+            const isRescue = status.session_type === 'rescue';
+            const modeKey = isRescue ? 'rescue' : 'whitelist';
+            if (!lastActive || lastMode !== modeKey) {
+                let allowed = [];
+                if (!isRescue) {
+                    const listsRes = await fetch(`${API}/api/lists`, { signal: AbortSignal.timeout(2000) });
+                    const listsData = await listsRes.json();
+                    allowed = listsData.lists?.whitelist || [];
+                }
                 await applyWhitelistRules(allowed);
                 lastActive = true;
-                lastMode = 'whitelist';
+                lastMode = modeKey;
             }
         } else {
             // Idle — remove all rules

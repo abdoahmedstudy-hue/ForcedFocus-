@@ -20,9 +20,9 @@
     --success: #22c55e;
     --success-glow: rgba(34, 197, 94, 0.3);
     --warning: #f59e0b;
-    --radius: 16px;
-    --radius-sm: 10px;
-    --radius-xs: 6px;
+    --radius: 28px;
+    --radius-sm: 24px;
+    --radius-xs: 20px;
     --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     --glass: blur(20px);
     --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -61,11 +61,66 @@ body::after {
 }
 
 .app {
-    max-width: 720px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 32px 20px 60px;
     position: relative;
     z-index: 1;
+}
+
+/* ── Dashboard Layout ────────────────────────────────────────────────────── */
+
+.dashboard-layout {
+    display: grid;
+    grid-template-columns: 350px 1fr;
+    gap: 32px;
+    align-items: start;
+}
+
+.dashboard-sidebar {
+    position: sticky;
+    top: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.dashboard-main {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.controls-section {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+    align-items: start;
+}
+
+.controls-section > .card,
+.controls-section > .action-buttons,
+.controls-section > .unlock-info {
+    margin-bottom: 0;
+    height: 100%;
+}
+
+.controls-section > .action-buttons {
+    grid-column: 1 / -1;
+    margin-top: 10px;
+}
+
+.controls-section > .unlock-info {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 950px) {
+    .dashboard-layout {
+        grid-template-columns: 1fr;
+    }
+    .dashboard-sidebar {
+        position: static;
+    }
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
@@ -239,11 +294,11 @@ body::after {
 /* ── Mode Toggle ─────────────────────────────────────────────────────────── */
 
 .mode-toggle {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
     gap: 12px;
 }
 .mode-btn {
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -273,6 +328,17 @@ body::after {
 .mode-icon { font-size: 28px; }
 .mode-name { font-size: 14px; font-weight: 600; }
 .mode-desc { font-size: 11px; color: var(--text-muted); }
+
+/* Compact Session Type Toggle (Pill) */
+.session-type-btn:hover {
+    background: rgba(255, 255, 255, 0.05) !important;
+    color: var(--text-primary) !important;
+}
+.session-type-btn.active {
+    background: rgba(99, 102, 241, 0.15) !important;
+    color: var(--accent-blue) !important;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+}
 
 /* ── Pomodoro ────────────────────────────────────────────────────────────── */
 
@@ -528,6 +594,16 @@ body::after {
     box-shadow: 0 4px 20px var(--danger-glow);
 }
 
+.btn-rescue:hover {
+    background: rgba(239, 68, 68, 0.15) !important;
+    border-color: rgba(239, 68, 68, 0.4) !important;
+    box-shadow: 0 8px 24px rgba(239, 68, 68, 0.2) !important;
+    transform: translateY(-2px);
+}
+.btn-rescue:active {
+    transform: translateY(1px);
+}
+
 .unlock-info {
     text-align: center;
     padding: 12px;
@@ -545,10 +621,16 @@ body::after {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 20px;
-    margin-top: 12px;
+    margin-top: 0;
 }
-@media (max-width: 640px) {
+@media (max-width: 768px) {
     .lists-section { grid-template-columns: 1fr; }
+}
+
+.list-card {
+    background: linear-gradient(145deg, rgba(25, 25, 45, 0.6), rgba(10, 10, 20, 0.8));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.05), 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 .list-header {
@@ -620,24 +702,30 @@ body::after {
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: rgba(255,255,255,0.1) transparent;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-right: 4px;
 }
 .domain-list li {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 12px;
-    border-radius: var(--radius-xs);
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
     font-size: 13px;
     color: var(--text-secondary);
-    transition: all 0.2s ease;
-    animation: fadeIn 0.2s ease;
-    border: 1px solid transparent;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: fadeIn 0.3s ease;
 }
 .domain-list li:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.06);
     color: var(--text-primary);
-    border-color: rgba(255, 255, 255, 0.05);
-    transform: translateX(4px);
+    border-color: rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 .domain-list li .remove-btn {
     background: none;

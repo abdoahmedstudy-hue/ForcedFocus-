@@ -10,34 +10,49 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(-45deg, #0f0f1a, #1a1a2e, #16213e, #0d0b21);
-            background-size: 400% 400%;
-            animation: gradientBG 15s ease infinite;
+            background: #06060b;
             font-family: 'Inter', -apple-system, sans-serif;
             color: #e2e8f0;
             overflow: hidden;
+            position: relative;
         }
-        @keyframes gradientBG {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
+        body::before, body::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.15;
+            pointer-events: none;
+            z-index: 0;
+        }
+        body::before {
+            width: 600px; height: 600px;
+            background: #6366f1;
+            top: -200px; right: -200px;
+        }
+        body::after {
+            width: 500px; height: 500px;
+            background: #8b5cf6;
+            bottom: -150px; left: -150px;
         }
         .container {
+            position: relative;
+            z-index: 1;
             text-align: center;
             padding: 3rem;
             max-width: 500px;
-            background: rgba(255, 255, 255, 0.03);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 24px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            background: rgba(15, 15, 30, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 28px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
             transform: translateY(0);
             transition: all 0.4s ease;
         }
         .container:hover {
             transform: translateY(-5px);
-            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5), 0 0 30px rgba(244, 63, 94, 0.1);
-            background: rgba(255, 255, 255, 0.04);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(244, 63, 94, 0.1);
+            background: rgba(20, 20, 45, 0.8);
         }
         .icon {
             font-size: 5rem;
@@ -78,7 +93,7 @@
             padding: 0.5rem 1.2rem;
             background: rgba(239, 68, 68, 0.15);
             color: #f87171;
-            border-radius: 20px;
+            border-radius: 100px;
             font-size: 0.85rem;
             font-weight: 600;
             margin-top: 1.5rem;
