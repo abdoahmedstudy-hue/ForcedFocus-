@@ -387,19 +387,16 @@ function setActiveUI(status) {
   if (isFullyActive) {
     const intentContainer = document.getElementById("activeIntentContainer");
     const intentDisplay = document.getElementById("activeIntentDisplay");
-    const intentInputBox = document.getElementById("activeIntentInputBox");
 
     if (intentContainer) {
-      intentContainer.style.display = "block";
       if (status.intent) {
+        intentContainer.style.display = "block";
         if (intentDisplay) {
           intentDisplay.textContent = status.intent;
           intentDisplay.style.display = "block";
         }
-        if (intentInputBox) intentInputBox.style.display = "none";
       } else {
-        if (intentDisplay) intentDisplay.style.display = "none";
-        if (intentInputBox) intentInputBox.style.display = "flex";
+        intentContainer.style.display = "none";
       }
     }
     // Mode & expires info
@@ -673,69 +670,100 @@ function initEvents() {
     }
   });
 
-  // Start button
-  els.btnStart.addEventListener("click", async () => {
-    let payload = {};
-    const intentVal = null; // Set via active state now
-
-    if (sessionType === "pomodoro") {
-      const totalMin = (pomoFocusMin + pomoBreakMin) * pomoCycles;
-      totalSessionSeconds = totalMin * 60;
-      payload = {
-        duration: totalMin,
-        mode: currentMode,
-        session_type: "pomodoro",
-        focus_minutes: pomoFocusMin,
-        break_minutes: pomoBreakMin,
-        cycles: pomoCycles,
-      };
-    } else {
-      const duration = selectedDuration;
-      totalSessionSeconds = duration * 60;
-      payload = { duration, mode: currentMode, session_type: "standard" };
-    }
-
-    payload.groups = Array.from(selectedGroups);
-
+  // Start button -> Shows Intent Modal
+  els.btnStart.addEventListener("click", () => {
+    // Basic validation before showing modal
     if (scheduleType === "in") {
       const min = parseInt(els.scheduleIn.value);
       if (!min || min < 1) {
         showToast("Please enter a valid number of minutes.");
         return;
       }
-      payload.schedule_in = min;
     } else if (scheduleType === "at") {
       const time = els.scheduleAt.value;
       if (!time) {
         showToast("Please select a valid date and time.");
         return;
       }
-      payload.schedule_at = time;
     }
 
-    const originalBtnHTML = els.btnStart.innerHTML;
-    els.btnStart.textContent = "⏳ Starting...";
-    els.btnStart.disabled = true;
-
-    try {
-      const res = await api("POST", "/api/start", payload);
-      if (res.status === "ok") {
-        if (payload.schedule_in || payload.schedule_at) {
-          showToast("Session scheduled successfully! 🗓️");
-        } else {
-          showToast("Session started! 🚀");
-        }
-      } else {
-        showToast(`Error: ${res.message || "Failed to start"}`);
-      }
-    } catch (err) {
-      showToast("Connection failed. Is the daemon running?");
-    } finally {
-      els.btnStart.innerHTML = originalBtnHTML;
-      els.btnStart.disabled = false;
+    const intentModal = $("#intentModal");
+    const intentInput = $("#intentModalInput");
+    if (intentModal && intentInput) {
+      intentModal.classList.remove("hidden");
+      intentInput.value = "";
+      intentInput.focus();
     }
-    refreshStatus();
   });
+
+  // Cancel Intent
+  const btnCancelIntent = $("#btnCancelIntent");
+  if (btnCancelIntent) {
+    btnCancelIntent.addEventListener("click", () => {
+      $("#intentModal").classList.add("hidden");
+    });
+  }
+
+  // Confirm Intent & Start Session
+  const btnConfirmIntent = $("#btnConfirmIntent");
+  if (btnConfirmIntent) {
+    btnConfirmIntent.addEventListener("click", async () => {
+      $("#intentModal").classList.add("hidden");
+      let payload = {};
+      const intentVal = $("#intentModalInput").value.trim();
+
+      if (sessionType === "pomodoro") {
+        const totalMin = (pomoFocusMin + pomoBreakMin) * pomoCycles;
+        totalSessionSeconds = totalMin * 60;
+        payload = {
+          duration: totalMin,
+          mode: currentMode,
+          session_type: "pomodoro",
+          focus_minutes: pomoFocusMin,
+          break_minutes: pomoBreakMin,
+          cycles: pomoCycles,
+        };
+      } else {
+        const duration = selectedDuration;
+        totalSessionSeconds = duration * 60;
+        payload = { duration, mode: currentMode, session_type: "standard" };
+      }
+
+      payload.groups = Array.from(selectedGroups);
+      if (intentVal) {
+        payload.intent = intentVal;
+      }
+
+      if (scheduleType === "in") {
+        payload.schedule_in = parseInt(els.scheduleIn.value);
+      } else if (scheduleType === "at") {
+        payload.schedule_at = els.scheduleAt.value;
+      }
+
+      const originalBtnHTML = els.btnStart.innerHTML;
+      els.btnStart.textContent = "⏳ Starting...";
+      els.btnStart.disabled = true;
+
+      try {
+        const res = await api("POST", "/api/start", payload);
+        if (res.status === "ok") {
+          if (payload.schedule_in || payload.schedule_at) {
+            showToast("Session scheduled successfully! 🗓️");
+          } else {
+            showToast("Session started! 🚀");
+          }
+        } else {
+          showToast(`Error: ${res.message || "Failed to start"}`);
+        }
+      } catch (err) {
+        showToast("Connection failed. Is the daemon running?");
+      } finally {
+        els.btnStart.innerHTML = originalBtnHTML;
+        els.btnStart.disabled = false;
+      }
+      refreshStatus();
+    });
+  }
 
   // Rescue button
   els.btnRescue.addEventListener("click", async () => {
@@ -1036,29 +1064,4 @@ function renderSessionGroups() {
 document.addEventListener("DOMContentLoaded", () => {
   init();
 
-  const btnSaveIntent = document.getElementById("btnSaveIntent");
-  if (btnSaveIntent) {
-    btnSaveIntent.addEventListener("click", async () => {
-      const input = document.getElementById("activeIntentInput");
-      if (input && input.value.trim() !== "") {
-        btnSaveIntent.textContent = "...";
-        btnSaveIntent.disabled = true;
-        try {
-          const res = await api("POST", "/api/intent", {
-            intent: input.value.trim(),
-          });
-          if (res.status === "ok") {
-            refreshStatus();
-          } else {
-            showToast(res.message || "Failed to save intent");
-          }
-        } catch (e) {
-          showToast("Failed to save intent");
-        } finally {
-          btnSaveIntent.textContent = "Save Target";
-          btnSaveIntent.disabled = false;
-        }
-      }
-    });
-  }
 });

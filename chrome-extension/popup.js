@@ -238,18 +238,19 @@ function renderStatus(data) {
   if (activeControls) activeControls.classList.toggle("hidden", !active);
 
   const intentDisplay = $("#activeIntentDisplay");
-  const intentInputBox = $("#activeIntentInputBox");
 
   if (active) {
-    if (data.intent) {
-      if (intentDisplay) {
-        intentDisplay.textContent = data.intent;
-        intentDisplay.style.display = "block";
+    const intentContainer = $("#activeIntentContainer");
+    if (intentContainer) {
+      if (data.intent) {
+        intentContainer.style.display = "block";
+        if (intentDisplay) {
+          intentDisplay.textContent = data.intent;
+          intentDisplay.style.display = "block";
+        }
+      } else {
+        intentContainer.style.display = "none";
       }
-      if (intentInputBox) intentInputBox.style.display = "none";
-    } else {
-      if (intentDisplay) intentDisplay.style.display = "none";
-      if (intentInputBox) intentInputBox.style.display = "flex";
     }
   }
   if (stopDialog) stopDialog.classList.add("hidden");
@@ -464,15 +465,44 @@ function initEvents() {
     }
   });
 
-  // Start — R6: disable button during async
+  // Start — Shows Intent Dialog
   const btnStart = $("#btnStart");
   if (btnStart) {
-    btnStart.addEventListener("click", async () => {
+    btnStart.addEventListener("click", () => {
+      const intentDialog = $("#intentDialog");
+      const intentInput = $("#intentDialogInput");
+      if (intentDialog) {
+        intentDialog.classList.remove("hidden");
+        if (intentInput) {
+          intentInput.value = "";
+          intentInput.focus();
+        }
+      }
+    });
+  }
+
+  // Cancel Intent Dialog
+  const btnCancelIntent = $("#btnCancelIntent");
+  if (btnCancelIntent) {
+    btnCancelIntent.addEventListener("click", () => {
+      const intentDialog = $("#intentDialog");
+      if (intentDialog) intentDialog.classList.add("hidden");
+    });
+  }
+
+  // Confirm Intent & Start Session
+  const btnConfirmIntent = $("#btnConfirmIntent");
+  if (btnConfirmIntent) {
+    btnConfirmIntent.addEventListener("click", async () => {
+      const intentDialog = $("#intentDialog");
+      const intentInput = $("#intentDialogInput");
+      if (intentDialog) intentDialog.classList.add("hidden");
+
       btnStart.textContent = "⏳ Starting...";
       btnStart.disabled = true;
 
       let payload = {};
-      const intentVal = null; // Will be set after session starts via active state
+      const intentVal = intentInput ? intentInput.value.trim() : "";
 
       if (sessionType === "pomodoro") {
         const totalMin = (pomoFocusMin + pomoBreakMin) * pomoCycles;
@@ -494,6 +524,10 @@ function initEvents() {
           session_type: "standard",
           groups: Array.from(selectedGroups),
         };
+      }
+
+      if (intentVal) {
+        payload.intent = intentVal;
       }
 
       try {
@@ -649,31 +683,6 @@ async function init() {
 
   initEvents();
 
-  const btnSaveIntent = $("#btnSaveIntent");
-  if (btnSaveIntent) {
-    btnSaveIntent.addEventListener("click", async () => {
-      const input = $("#activeIntentInput");
-      if (input && input.value.trim() !== "") {
-        btnSaveIntent.textContent = "...";
-        btnSaveIntent.disabled = true;
-        try {
-          const res = await api("POST", "/api/intent", {
-            intent: input.value.trim(),
-          });
-          if (res.status === "ok") {
-            await refresh();
-          } else {
-            showError(res.message || "Failed to save intent");
-          }
-        } catch (e) {
-          showError("Failed to save intent: " + e.message);
-        } finally {
-          btnSaveIntent.textContent = "Save";
-          btnSaveIntent.disabled = false;
-        }
-      }
-    });
-  }
 
   // S3: Listen for phase change broadcasts from background worker
   // Triggers immediate UI refresh when Pomodoro transitions focus↔break

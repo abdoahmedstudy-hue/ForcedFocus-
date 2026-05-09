@@ -2916,6 +2916,7 @@ class EmbeddedWebHandler(BaseHTTPRequestHandler):
                 "break_minutes": body.get("break_minutes", 5),
                 "cycles": body.get("cycles", 4),
                 "groups": body.get("groups", []),
+                "intent": body.get("intent", ""),
             }
             if "schedule_in" in body:
                 cmd["schedule_in_minutes"] = body["schedule_in"]

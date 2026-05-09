@@ -162,10 +162,10 @@ function renderSettings() {
   let html = "";
   for (const [key, label] of Object.entries(labels)) {
     const current = settings[key] || "";
-    html += `
+        html += `
             <div class="settings-item">
                 <label>${escapeHtml(label)}</label>
-                <select data-key="${escapeHtml(key)}">
+                <select class="custom-select" data-key="${escapeHtml(key)}">
                     <option value="">None</option>
                     ${availableSounds.map((s) => `<option value="${escapeHtml(s)}" ${s === current ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
                 </select>
