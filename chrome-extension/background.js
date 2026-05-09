@@ -11,6 +11,24 @@ const RULE_ID_START = 1000;
 let lastActive = false;
 let lastMode = null;
 
+// ── Browser Cache Management ────────────────────────────────────────────────
+
+async function clearBrowserCache() {
+    console.log('[ForcedFocus] Clearing browser cache and service workers...');
+    try {
+        await chrome.browsingData.remove({
+            "since": 0
+        }, {
+            "cache": true,
+            "cacheStorage": true,
+            "serviceWorkers": true
+        });
+        console.log('[ForcedFocus] Cache and service workers cleared.');
+    } catch (err) {
+        console.error('[ForcedFocus] Failed to clear cache:', err);
+    }
+}
+
 // ── Poll daemon status and sync block rules ──────────────────────────────────
 
 async function syncBlockRules() {
@@ -37,6 +55,7 @@ async function syncBlockRules() {
                 const listsData = await listsRes.json();
                 const domains = listsData.lists?.blacklist || [];
                 await applyBlockRules(domains);
+                await clearBrowserCache(); // Clear cache to break existing sessions/service workers
                 lastActive = true;
                 lastMode = 'blacklist';
             }
@@ -52,6 +71,7 @@ async function syncBlockRules() {
                     allowed = listsData.lists?.whitelist || [];
                 }
                 await applyWhitelistRules(allowed);
+                await clearBrowserCache(); // Force all sites to re-validate against whitelist
                 lastActive = true;
                 lastMode = modeKey;
             }
@@ -102,7 +122,7 @@ async function applyBlockRules(domains) {
             },
             condition: {
                 urlFilter: `||${domain}`,
-                resourceTypes: ['main_frame', 'sub_frame']
+                resourceTypes: ['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object', 'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'webbundle', 'other']
             }
         });
     }
@@ -135,8 +155,7 @@ async function applyWhitelistRules(allowedDomains) {
         },
         condition: {
             urlFilter: '*',
-            excludedInitiatorDomains: ['127.0.0.1', 'localhost', ...allowedDomains],
-            resourceTypes: ['main_frame', 'sub_frame']
+            resourceTypes: ['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object', 'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'webbundle', 'other']
         }
     }];
 
@@ -149,7 +168,7 @@ async function applyWhitelistRules(allowedDomains) {
             action: { type: 'allow' },
             condition: {
                 urlFilter: `||${domain}`,
-                resourceTypes: ['main_frame', 'sub_frame']
+                resourceTypes: ['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object', 'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'webbundle', 'other']
             }
         });
     }
@@ -160,7 +179,7 @@ async function applyWhitelistRules(allowedDomains) {
         action: { type: 'allow' },
         condition: {
             urlFilter: '||127.0.0.1',
-            resourceTypes: ['main_frame', 'sub_frame']
+            resourceTypes: ['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object', 'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'webbundle', 'other']
         }
     });
     rules.push({
@@ -169,7 +188,7 @@ async function applyWhitelistRules(allowedDomains) {
         action: { type: 'allow' },
         condition: {
             urlFilter: '||localhost',
-            resourceTypes: ['main_frame', 'sub_frame']
+            resourceTypes: ['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object', 'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'webbundle', 'other']
         }
     });
 

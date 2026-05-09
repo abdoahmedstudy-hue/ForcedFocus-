@@ -169,6 +169,20 @@ if [[ -f "$NEWSYSLOG_SRC" ]]; then
     echo -e "${GREEN}  ✓ Log rotation configured.${NC}"
 fi
 
+# ── Configure PF Firewall Anchor ──────────────────────────────────────────────
+PF_CONF="/etc/pf.conf"
+if [[ -f "$PF_CONF" ]]; then
+    if ! grep -q "anchor \"forcefocus\"" "$PF_CONF"; then
+        echo -e "${CYAN}  Adding forcefocus anchor to ${PF_CONF}...${NC}"
+        # Safely append anchor to /etc/pf.conf
+        echo "" >> "$PF_CONF"
+        echo "# ForcedFocus transient rules" >> "$PF_CONF"
+        echo "anchor \"forcefocus\"" >> "$PF_CONF"
+        echo -e "${GREEN}  ✓ PF anchor added. Reloading PF...${NC}"
+        pfctl -f "$PF_CONF" 2>/dev/null || true
+    fi
+fi
+
 # ── Load the LaunchDaemon ─────────────────────────────────────────────────────
 echo -e "${CYAN}  Loading LaunchDaemon...${NC}"
 launchctl load -w "$PLIST_DST"

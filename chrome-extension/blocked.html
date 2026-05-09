@@ -117,12 +117,14 @@
             Stay focused — you've got this! 💪
         </p>
         <div class="badge">⚡ ForcedFocus Active</div>
+        <audio id="blockedSound" src="sounds/Blocked site open.mp3"></audio>
     </div>
     <script>
         const params = new URLSearchParams(window.location.search);
         const domain = params.get('domain') || 'this site';
         document.getElementById('blockedDomain').textContent = domain;
         document.title = `Blocked: ${domain} — ForcedFocus`;
+        document.getElementById('blockedSound').play().catch(e => console.log('Audio playback prevented'));
     </script>
 </body>
 </html>
