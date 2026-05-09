@@ -316,6 +316,7 @@ class LocalDNSProxy(threading.Thread):
                     break
 
         if allowed:
+            fw = None
             try:
                 # Use appropriate socket family for upstream if needed, but usually v4 is fine for forwarding
                 fw = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -325,6 +326,9 @@ class LocalDNSProxy(threading.Thread):
                 sock.sendto(resp, addr)
             except Exception:
                 pass
+            finally:
+                if fw:
+                    fw.close()
         else:
             resp = self._make_nxdomain(data)
             if resp:
@@ -1145,7 +1149,7 @@ class ForcedFocusDaemon:
             self._set_dns_to_localhost()
             # M4: Block DoH providers in /etc/hosts for whitelist mode too
             self._enforce_doh_block()
-            self._enforce_firewall(True)
+            self._enforce_firewall(True, upstream_dns=self.dns_proxy.upstream_dns)
             self._clear_browser_caches()
             self._flush_dns()
             logging.info("Whitelist enforced via Local DNS Proxy.")
@@ -1442,7 +1446,7 @@ class ForcedFocusDaemon:
         except Exception as exc:
             logging.error("Failed to clear browser caches: %s", exc)
 
-    def _enforce_firewall(self, enable: bool):
+    def _enforce_firewall(self, enable: bool, upstream_dns: str = None):
         """Nuclear firewall enforcement: Blocks QUIC, DoT, and known DoH IPs."""
         try:
             if enable:
@@ -1450,14 +1454,23 @@ class ForcedFocusDaemon:
                 subprocess.run(["pfctl", "-e"], capture_output=True, timeout=5)
                 # 2. Construct nuclear ruleset
                 rules = [
-                    "block drop out proto udp from any to any port 443", # QUIC bypass
-                    "block drop out proto {tcp udp} from any to any port 853", # DNS-over-TLS bypass
-                    "block drop out proto {tcp udp} from any to any port {1080 8080 3128 9050 9051}", # Proxy/Tor bypass
+                    "pass out quick on lo0 all", # Exempt localhost (for Local DNS Proxy & Web UI)
+                    "pass in quick on lo0 all"
                 ]
                 
-                # Block known DoH provider IPs to prevent direct IP-based bypass
+                # Exempt the DNS proxy's upstream resolver
+                if upstream_dns:
+                    rules.append(f"pass out quick proto {{tcp udp}} from any to {upstream_dns} port 53")
+
+                rules.extend([
+                    "block return out proto udp from any to any port 443", # QUIC bypass
+                    "block return out proto {tcp udp} from any to any port 853", # DNS-over-TLS bypass
+                    "block return out proto {tcp udp} from any to any port {1080 8080 3128 9050 9051}", # Proxy/Tor bypass
+                ])
+                
+                # Block known DoH provider IPs to prevent direct IP-based bypass (only block port 443, not all ports)
                 for ip in DOH_IPS:
-                    rules.append(f"block drop out from any to {ip}")
+                    rules.append(f"block return out proto tcp from any to {ip} port 443")
                 
                 rules_str = "\n".join(rules) + "\n"
                 process = subprocess.Popen(["pfctl", "-a", "forcefocus", "-f", "-"], 
@@ -1841,7 +1854,8 @@ class ForcedFocusDaemon:
                     # Check for '443' and 'udp' in ruleset output
                     if "443" not in res.stdout or "udp" not in res.stdout:
                         logging.warning("FIREWALL TAMPER DETECTED. Rules: '%s'. Re-enforcing.", res.stdout.strip())
-                        self._enforce_firewall(True)
+                        upstream = self.dns_proxy.upstream_dns if (self.mode == "whitelist" and getattr(self, "dns_proxy", None)) else None
+                        self._enforce_firewall(True, upstream_dns=upstream)
                 except Exception as exc:
                     logging.error("Watchdog firewall error: %s", exc)
 

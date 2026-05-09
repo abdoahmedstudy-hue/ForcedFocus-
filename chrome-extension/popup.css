@@ -441,10 +441,12 @@ body::after {
     box-shadow: 0 0 4px var(--red);
 }
 
-.phase-dot.break {
-    background: var(--green);
-    box-shadow: 0 0 4px var(--green);
+.ring-progress.break {
+    stroke: var(--green) !important;
 }
+
+.phase-dot.break { background: var(--green); }
+.phase-dot.focus { background: var(--red); }
 
 .btn-stop {
     width: 100%;

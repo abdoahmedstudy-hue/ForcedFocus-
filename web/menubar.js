@@ -4,6 +4,8 @@ let currentType = 'standard';
 let totalSecs = 0;
 let countdownInterval = null;
 let apiToken = '';
+let selectedGroups = [];
+let availableGroups = {};
 
 const AudioManager = {
     settings: {},
@@ -56,7 +58,12 @@ const els = {
     customMin: $('#customMin'),
     pomoFocus: $('#pomoFocus'),
     pomoBreak: $('#pomoBreak'),
-    pomoCycles: $('#pomoCycles')
+    pomoCycles: $('#pomoCycles'),
+    
+    // Group UI
+    groupSection: $('#groupSection'),
+    groupGrid: $('#groupGrid'),
+    groupCount: $('#groupCount')
 };
 
 async function api(method, path, body = null) {
@@ -106,24 +113,51 @@ function fmtClock(secs) {
     return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
-function updateRing(rem) {
+function updateRing(remMs, isInitial = false) {
     const circ = 565.48; // 2 * Math.PI * 90
-    els.progress.style.strokeDasharray = circ;
-    const prog = totalSecs > 0 ? (1 - rem / totalSecs) : 0;
-    els.progress.style.strokeDashoffset = circ * (1 - prog);
+    const totalMs = totalSecs * 1000;
+    // Fill the ring clockwise as time passes
+    const prog = totalMs > 0 ? (1 - remMs / totalMs) : 0;
+    
+    if (isInitial) els.progress.style.transition = 'none';
+    els.progress.style.strokeDasharray = `${Math.max(0, Math.min(1, prog)) * circ} ${circ}`;
+    els.progress.style.strokeDashoffset = 0;
+    if (isInitial) {
+        els.progress.offsetHeight; // force reflow
+        els.progress.style.transition = '';
+    }
 }
 
 function startCountdown(rem) {
     if (countdownInterval) clearInterval(countdownInterval);
-    els.time.textContent = fmt(rem);
-    updateRing(rem);
-    countdownInterval = setInterval(() => {
-        rem--;
-        if (rem <= 0) { rem = 0; clearInterval(countdownInterval); refresh(); }
-        els.time.textContent = fmt(rem);
-        if (els.infoNextTime) els.infoNextTime.textContent = fmtClock(rem);
-        updateRing(rem);
-    }, 1000);
+    
+    const startTime = Date.now();
+    const durationMs = rem * 1000;
+    const endTime = startTime + durationMs;
+
+    let isFirst = true;
+    const tick = () => {
+        const now = Date.now();
+        const remMs = endTime - now;
+        
+        if (remMs <= 0) {
+            clearInterval(countdownInterval);
+            els.time.textContent = fmt(0);
+            updateRing(0);
+            refresh();
+            return;
+        }
+
+        const remSecs = Math.ceil(remMs / 1000);
+        els.time.textContent = fmt(remSecs);
+        if (els.infoNextTime) els.infoNextTime.textContent = fmtClock(remSecs);
+        
+        updateRing(remMs, isFirst);
+        isFirst = false;
+    };
+
+    tick();
+    countdownInterval = setInterval(tick, 100); // 10fps for buttery smooth movement
 }
 
 function renderStatus(data) {
@@ -168,6 +202,48 @@ function renderStatus(data) {
         els.badgeText.textContent = 'Idle';
         els.badge.classList.remove('active');
         if (countdownInterval) clearInterval(countdownInterval);
+    }
+}
+
+async function fetchGroups() {
+    try {
+        const res = await api('GET', '/api/groups');
+        if (res.groups) {
+            availableGroups = res.groups;
+            renderGroups();
+        }
+    } catch (e) { console.error('Failed to fetch groups:', e); }
+}
+
+function renderGroups() {
+    if (!els.groupGrid || !els.groupSection) return;
+    
+    const names = Object.keys(availableGroups);
+    if (names.length === 0) {
+        els.groupSection.classList.add('hidden');
+        return;
+    }
+    
+    els.groupSection.classList.remove('hidden');
+    els.groupGrid.innerHTML = '';
+    
+    names.forEach(name => {
+        const chip = document.createElement('div');
+        chip.className = 'group-chip' + (selectedGroups.includes(name) ? ' active' : '');
+        chip.textContent = name;
+        chip.onclick = () => {
+            if (selectedGroups.includes(name)) {
+                selectedGroups = selectedGroups.filter(g => g !== name);
+            } else {
+                selectedGroups.push(name);
+            }
+            renderGroups();
+        };
+        els.groupGrid.appendChild(chip);
+    });
+    
+    if (els.groupCount) {
+        els.groupCount.textContent = `${selectedGroups.length} selected`;
     }
 }
 
@@ -233,8 +309,9 @@ function initEvents() {
 
     els.btnStart.addEventListener('click', async () => {
         els.btnStart.textContent = 'Starting...';
+        els.btnStart.disabled = true;
         
-        let payload = { mode: currentMode, session_type: currentType };
+        let payload = { mode: currentMode, session_type: currentType, groups: selectedGroups };
         
         if (currentType === 'standard') {
             const activeDur = Array.from(els.durChips).find(c => c.classList.contains('active'));
@@ -247,11 +324,19 @@ function initEvents() {
             payload.duration = (payload.focus_minutes + payload.break_minutes) * payload.cycles;
         }
         
-        const res = await api('POST', '/api/start', payload);
-        els.btnStart.textContent = '▶ Start Session';
-        if (res.status === 'ok') {
-            AudioManager.play('start');
-            refresh();
+        try {
+            const res = await api('POST', '/api/start', payload);
+            if (res.status === 'ok') {
+                AudioManager.play('start');
+                refresh();
+            } else {
+                alert(res.message || 'Failed to start');
+            }
+        } catch (e) {
+            console.error('Start failed:', e);
+        } finally {
+            els.btnStart.textContent = '▶ Start Session';
+            els.btnStart.disabled = false;
         }
     });
 
@@ -325,6 +410,7 @@ let globalPollInterval = null;
 
 window.onPopoverShow = () => {
     loadSettings();
+    fetchGroups();
     refresh();
     if (globalPollInterval) clearInterval(globalPollInterval);
     globalPollInterval = setInterval(refresh, 2000);
@@ -351,6 +437,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadApiToken();
     // S8: Load settings and refresh status immediately, don't wait for onPopoverShow
     loadSettings();
+    fetchGroups();
     refresh();
     globalPollInterval = setInterval(refresh, 2000);
 });

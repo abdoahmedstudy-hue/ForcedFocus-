@@ -45,6 +45,20 @@ body {
     overflow-x: hidden;
 }
 
+.app {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 32px 20px 60px;
+    position: relative;
+    z-index: 1;
+    animation: pageFadeIn 0.5s ease-out;
+}
+
+@keyframes pageFadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 .sr-only {
     position: absolute;
     width: 1px;
@@ -464,24 +478,14 @@ body::after {
 
 .timer-progress {
     fill: none;
-    stroke-width: 12;
+    stroke-width: 14;
     stroke-linecap: round;
-    stroke-dasharray: 565.48;
-    stroke-dashoffset: 565.48;
-    transition: stroke-dashoffset 1s linear;
-    filter: none;
-    /* No broad back glow */
+    stroke-dasharray: 0 565.48;
+    stroke-dashoffset: 0;
+    transition: stroke-dasharray 0.1s linear, stroke 0.3s ease;
 }
 
-.timer-progress.core {
-    stroke-width: 4;
-    filter: drop-shadow(0 0 8px #ffffff);
-    opacity: 1;
-}
-
-.timer-ring.active .timer-progress.core {
-    filter: drop-shadow(0 0 12px #ffffff);
-}
+/* Active state styling removed for simplicity */
 
 .timer-value {
     font-size: 48px;
@@ -653,8 +657,8 @@ body::after {
 }
 
 .timer-ring.break .timer-progress {
-    stroke: var(--warning);
-    filter: drop-shadow(0 0 12px var(--warning));
+    stroke: #10b981 !important;
+    filter: none;
 }
 
 .pomo-presets {

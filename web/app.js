@@ -153,45 +153,53 @@ function formatTime(totalSeconds) {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-function updateTimerDisplay(remainingSeconds) {
-    els.timerValue.textContent = formatTime(remainingSeconds);
-    // Update progress ring
-    const circumference = 2 * Math.PI * 90; // 565.48
-    const progress = totalSessionSeconds > 0
-        ? (1 - remainingSeconds / totalSessionSeconds)
-        : 0;
-    const offset = circumference * (1 - progress);
-    els.timerProgress.style.strokeDashoffset = offset;
-    const core = document.getElementById('timerProgressCore');
-    if (core) {
-        core.style.strokeDasharray = circumference;
-        core.style.strokeDashoffset = offset;
+function updateTimerDisplay(remMs, isInitial = false) {
+    const remSecs = Math.max(0, Math.ceil(remMs / 1000));
+    els.timerValue.textContent = formatTime(remSecs);
+    
+    // Update progress ring (Clockwise fill)
+    const circ = 565.48; // 2 * Math.PI * 90
+    const totalMs = totalSessionSeconds * 1000;
+    const prog = totalMs > 0 ? (1 - remMs / totalMs) : 0;
+    
+    if (isInitial) els.timerProgress.style.transition = 'none';
+    els.timerProgress.style.strokeDasharray = `${Math.max(0, Math.min(1, prog)) * circ} ${circ}`;
+    els.timerProgress.style.strokeDashoffset = 0;
+    if (isInitial) {
+        els.timerProgress.offsetHeight; // force reflow
+        els.timerProgress.style.transition = '';
     }
 }
 
-let currentRemaining = 0;
-
-// P1: Wall-clock anchored timer to prevent drift
-// R6: Check-before-decrement to prevent negative display
 function startCountdown(remainingSeconds) {
     if (countdownInterval && Math.abs(currentRemaining - remainingSeconds) <= 2) return;
     if (countdownInterval) clearInterval(countdownInterval);
 
-    const anchorTime = performance.now();
-    const anchorRemaining = remainingSeconds;
+    const startTime = Date.now();
+    const durationMs = remainingSeconds * 1000;
+    const endTime = startTime + durationMs;
     currentRemaining = remainingSeconds;
-    updateTimerDisplay(currentRemaining);
 
-    countdownInterval = setInterval(() => {
-        const elapsed = (performance.now() - anchorTime) / 1000;
-        currentRemaining = Math.max(0, Math.round(anchorRemaining - elapsed));
-        updateTimerDisplay(currentRemaining);
-        if (currentRemaining <= 0) {
+    let isFirst = true;
+    const tick = () => {
+        const now = Date.now();
+        const remMs = endTime - now;
+        
+        if (remMs <= 0) {
             clearInterval(countdownInterval);
             countdownInterval = null;
+            updateTimerDisplay(0);
             refreshStatus();
+            return;
         }
-    }, 250); // Higher frequency, lower visual drift
+
+        currentRemaining = Math.ceil(remMs / 1000);
+        updateTimerDisplay(remMs, isFirst);
+        isFirst = false;
+    };
+
+    tick();
+    countdownInterval = setInterval(tick, 100); // 10fps for buttery smooth movement
 }
 
 function stopCountdown() {
