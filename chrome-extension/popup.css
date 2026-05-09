@@ -169,13 +169,18 @@ body {
     text-align: center;
 }
 .mode-chip:hover, .dur-chip:hover, .type-chip:hover, .pomo-chip:hover {
-    background: rgba(255,255,255,0.05);
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 .mode-chip.active, .dur-chip.active, .type-chip.active, .pomo-chip.active {
     background: rgba(99,102,241,0.1);
     border-color: var(--border-act);
     color: var(--accent);
     font-weight: 600;
+    box-shadow: 0 0 12px rgba(99,102,241,0.2);
+    transform: translateY(-1px);
 }
 
 .btn-start {
@@ -189,14 +194,27 @@ body {
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    transition: var(--t);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 0 4px 16px rgba(99,102,241,0.25);
+    position: relative;
+    overflow: hidden;
+}
+.btn-start::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%; width: 50%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transform: skewX(-20deg);
+    transition: 0.5s;
+}
+.btn-start:hover::after {
+    left: 150%;
 }
 .btn-start:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(99,102,241,0.35);
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 8px 25px rgba(99,102,241,0.4), 0 0 10px rgba(139, 92, 246, 0.3);
 }
-.btn-start:active { transform: translateY(0); }
+.btn-start:active { transform: translateY(1px) scale(0.98); }
 
 .custom-row {
     margin-bottom: 10px;

@@ -217,11 +217,13 @@ body::after {
     padding: 24px;
     margin-bottom: 20px;
     box-shadow: var(--shadow);
-    transition: var(--transition);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .card:hover {
     background: var(--bg-card-hover);
-    border-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-4px);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.1);
 }
 .card-title {
     font-size: 15px;
@@ -256,13 +258,16 @@ body::after {
 }
 .mode-btn:hover {
     background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 .mode-btn.active {
     background: rgba(99, 102, 241, 0.1);
     border-color: var(--border-active);
     color: var(--text-primary);
-    box-shadow: 0 0 20px rgba(99, 102, 241, 0.1);
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.2), inset 0 0 10px rgba(99, 102, 241, 0.05);
+    transform: translateY(-2px);
 }
 .mode-icon { font-size: 28px; }
 .mode-name { font-size: 14px; font-weight: 600; }
@@ -361,13 +366,17 @@ body::after {
 }
 .dur-btn:hover {
     background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
 }
 .dur-btn.active {
     background: rgba(99, 102, 241, 0.1);
     border-color: var(--border-active);
     color: var(--accent-blue);
     font-weight: 600;
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.15);
+    transform: translateY(-1px);
 }
 .custom-duration input {
     width: 100%;
@@ -413,12 +422,25 @@ body::after {
     background: var(--accent-gradient);
     color: white;
     box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+.btn-start::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%; width: 50%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transform: skewX(-20deg);
+    transition: 0.5s;
+}
+.btn-start:hover::after {
+    left: 150%;
 }
 .btn-start:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(99, 102, 241, 0.4);
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 12px 30px rgba(99, 102, 241, 0.5), 0 0 15px rgba(139, 92, 246, 0.4);
 }
-.btn-start:active { transform: translateY(0); }
+.btn-start:active { transform: translateY(1px) scale(0.98); }
 
 .btn-stop {
     background: rgba(239, 68, 68, 0.1);
@@ -527,16 +549,19 @@ body::after {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 10px;
+    padding: 10px 12px;
     border-radius: var(--radius-xs);
     font-size: 13px;
     color: var(--text-secondary);
-    transition: var(--transition);
+    transition: all 0.2s ease;
     animation: fadeIn 0.2s ease;
+    border: 1px solid transparent;
 }
 .domain-list li:hover {
     background: rgba(255, 255, 255, 0.04);
     color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.05);
+    transform: translateX(4px);
 }
 .domain-list li .remove-btn {
     background: none;

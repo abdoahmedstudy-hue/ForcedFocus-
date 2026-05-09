@@ -19,8 +19,11 @@ import hmac
 import logging
 import threading
 import subprocess
+import mimetypes
 from pathlib import Path
 from datetime import datetime, timedelta
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, unquote
 
 def get_continuous_time() -> float:
     # CLOCK_MONOTONIC_RAW on macOS maps to mach_continuous_time (includes sleep time)
@@ -36,6 +39,9 @@ KS_HASH_FILE      = CONFIG_DIR / "ks_hash"
 LISTS_FILE        = CONFIG_DIR / "lists.json"
 SOCK_PATH         = "/var/run/forcefocus.sock"
 HOSTS_PATH        = Path("/private/etc/hosts")
+WEB_HOST          = "127.0.0.1"
+WEB_PORT          = 7070
+WEB_DIR           = Path("/usr/local/share/forcefocus/web")
 
 MARKER_BEGIN      = "# ──── BEGIN FORCEFOCUS ────"
 MARKER_END        = "# ──── END FORCEFOCUS ────"
@@ -106,8 +112,7 @@ class LocalDNSProxy(threading.Thread):
     def __init__(self, ff_daemon):
         super().__init__(daemon=True)
         self.ff_daemon = ff_daemon
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind(("127.0.0.1", 53))
+        self.sock = None
         self.active = True
         
         self.upstream_dns = "8.8.8.8"
@@ -120,7 +125,31 @@ class LocalDNSProxy(threading.Thread):
                         self.upstream_dns = first
                         break
 
+    def _bind_with_retry(self, max_attempts=10, initial_delay=1.0):
+        """Retry binding to port 53 with exponential backoff for boot race."""
+        delay = initial_delay
+        for attempt in range(max_attempts):
+            try:
+                self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                self.sock.bind(("127.0.0.1", 53))
+                logging.info("DNS Proxy bound to port 53 (attempt %d).", attempt + 1)
+                return True
+            except OSError as exc:
+                logging.warning("DNS Proxy bind failed (attempt %d/%d): %s", 
+                              attempt + 1, max_attempts, exc)
+                if self.sock:
+                    self.sock.close()
+                time.sleep(delay)
+                delay = min(delay * 2, 10.0)
+        logging.error("DNS Proxy: exhausted all bind attempts.")
+        return False
+
     def run(self):
+        if not self._bind_with_retry():
+            self.active = False
+            return
+            
         logging.info("DNS Proxy listening on 127.0.0.1:53")
         while self.active:
             try:
@@ -137,7 +166,8 @@ class LocalDNSProxy(threading.Thread):
     def stop(self):
         self.active = False
         try:
-            self.sock.close()
+            if self.sock:
+                self.sock.close()
         except:
             pass
 
@@ -238,6 +268,10 @@ class ForcedFocusDaemon:
 
         wt = threading.Thread(target=self._watchdog_loop, name="watchdog", daemon=True)
         wt.start()
+        
+        ht = threading.Thread(target=self._http_server, name="http", daemon=True)
+        ht.start()
+        
         self._socket_server()
 
     @staticmethod
@@ -371,18 +405,45 @@ class ForcedFocusDaemon:
             self._cleanup_session()
             return
 
-        remaining = (expiry - datetime.now()).total_seconds()
+        wall_remaining = (expiry - datetime.now()).total_seconds()
+        self.total_duration_seconds = data.get("duration_minutes", 120) * 60
+        
+        if "mono_elapsed" in data and "last_persist_wall" in data:
+            wall_gap = (datetime.now() - datetime.fromisoformat(data["last_persist_wall"])).total_seconds()
+            mono_remaining = self.total_duration_seconds - data["mono_elapsed"] - wall_gap
+            remaining = min(wall_remaining, mono_remaining)
+        else:
+            remaining = wall_remaining
+        remaining = max(0, remaining)
+
         self.mode = data.get("mode", "blacklist")
         self.session_expiry = expiry
-        self.remaining_seconds = max(0, remaining)
-        self.pending_unlock_seconds = max(0, (self.pending_unlock_at - datetime.now()).total_seconds()) if self.pending_unlock_at else 0
-        self.total_duration_seconds = data.get("duration_minutes", 120) * 60
+        self.remaining_seconds = remaining
         self.session_type = data.get("session_type", "standard")
         self.pomo_focus_minutes = data.get("pomo_focus_minutes", 0)
         self.pomo_break_minutes = data.get("pomo_break_minutes", 0)
         self.pomo_total_cycles = data.get("pomo_total_cycles", 0)
         self.pomo_current_cycle = data.get("pomo_current_cycle", 0)
         self.pomo_phase = data.get("pomo_phase", "focus")
+        
+        now_mono = get_continuous_time()
+
+        if data.get("pending_unlock_at"):
+            self.pending_unlock_at = datetime.fromisoformat(data["pending_unlock_at"])
+            unlock_remaining = max(0, (self.pending_unlock_at - datetime.now()).total_seconds())
+            if unlock_remaining <= 0:
+                logging.info("Pending unlock expired during downtime. Ending session.")
+                if self.mode == "whitelist":
+                    self.original_dns = data.get("original_dns", {})
+                self._cleanup_session()
+                return
+            self._mono_unlock_end = now_mono + unlock_remaining
+            self.pending_unlock_seconds = unlock_remaining
+        else:
+            self.pending_unlock_at = None
+            self.pending_unlock_seconds = 0
+            self._mono_unlock_end = 0.0
+
         if data.get("pomo_phase_expiry"):
             self.pomo_phase_expiry = datetime.fromisoformat(data["pomo_phase_expiry"])
             self.pomo_phase_remaining = max(0, (self.pomo_phase_expiry - datetime.now()).total_seconds())
@@ -391,23 +452,33 @@ class ForcedFocusDaemon:
             self.pomo_phase_remaining = 0
 
         # Set monotonic anchors from remaining wall-clock time
-        now_mono = get_continuous_time()
-        self._mono_session_end = now_mono + max(0, remaining)
-        self._mono_unlock_end = 0.0
+        self._mono_session_end = now_mono + remaining
+        
         if self.pomo_phase_expiry:
             self._mono_pomo_phase_end = now_mono + max(0, (self.pomo_phase_expiry - datetime.now()).total_seconds())
 
         self.active = True
-        is_break = self.session_type == "pomodoro" and self.pomo_phase == "break"
+        
         if self.mode == "whitelist":
             self.original_dns = data.get("original_dns", {})
             self.blocked_domains = data.get("blocked_domains", [])
             self.whitelist_resolved = data.get("whitelist_resolved", {})
             self.whitelist_count = len(self.blocked_domains)
+        else:
+            self.blocked_domains = self._get_blacklist_domains()
+
+        if self.session_type == "pomodoro" and self.pomo_phase_expiry:
+            if datetime.now() >= self.pomo_phase_expiry:
+                logging.info("Pomodoro phase expired during downtime. Advancing.")
+                self._transition_pomodoro_phase()
+                logging.info("Resuming %s session — %d min remaining.", self.mode, int(remaining / 60))
+                return
+
+        is_break = self.session_type == "pomodoro" and self.pomo_phase == "break"
+        if self.mode == "whitelist":
             if not is_break:
                 self._enforce_whitelist()
         else:
-            self.blocked_domains = self._get_blacklist_domains()
             if not is_break:
                 self._enforce_block()
         logging.info("Resuming %s session — %d min remaining.", self.mode, int(remaining / 60))
@@ -466,6 +537,8 @@ class ForcedFocusDaemon:
                 "pomo_current_cycle": self.pomo_current_cycle,
                 "pomo_phase": self.pomo_phase,
                 "pomo_phase_expiry": self.pomo_phase_expiry.isoformat() if self.pomo_phase_expiry else None,
+                "mono_elapsed": 0.0,
+                "last_persist_wall": datetime.now().isoformat(),
             }
             self.remaining_seconds = duration_minutes * 60
             self.pending_unlock_seconds = 0
@@ -535,6 +608,7 @@ class ForcedFocusDaemon:
                     }
             self.pending_unlock_at = datetime.now() + timedelta(seconds=DELAYED_UNLOCK_S)
             self._mono_unlock_end = get_continuous_time() + DELAYED_UNLOCK_S
+            self._persist_session_lock()
             unlock_str = self.pending_unlock_at.strftime("%H:%M:%S")
             logging.info("Delayed unlock requested — scheduled at %s.", unlock_str)
             return {
@@ -849,13 +923,21 @@ class ForcedFocusDaemon:
 
     def _persist_session_lock(self):
         """Re-create session.lock from in-memory state."""
+        if not self.active or not self.session_expiry:
+            return
+            
         data = {
             "started": (self.session_expiry - timedelta(seconds=self.total_duration_seconds)).isoformat(),
             "expiry": self.session_expiry.isoformat(),
             "duration_minutes": self.total_duration_seconds // 60,
             "mode": self.mode,
             "session_type": self.session_type,
+            "mono_elapsed": get_continuous_time() - (self._mono_session_end - self.total_duration_seconds),
+            "last_persist_wall": datetime.now().isoformat(),
         }
+        if self.pending_unlock_at:
+            data["pending_unlock_at"] = self.pending_unlock_at.isoformat()
+            
         if self.session_type == "pomodoro":
             data.update({
                 "pomo_focus_minutes": self.pomo_focus_minutes,
@@ -897,12 +979,18 @@ class ForcedFocusDaemon:
     def _watchdog_loop(self):
         logging.info("Watchdog thread started (interval=%.0fms).", WATCHDOG_INTERVAL * 1000)
         dns_check_counter = 0
+        persist_counter = 0
         while True:
             time.sleep(WATCHDOG_INTERVAL)
             with self.lock:
                 if not self.active:
                     continue
                 now_mono = get_continuous_time()
+                
+                persist_counter += 1
+                if persist_counter >= 120:  # 120 * 250ms = 30s
+                    persist_counter = 0
+                    self._persist_session_lock()
 
                 # C1: Handle signal-driven re-enforce (flag set without lock)
                 if self._reenforce_flag:
@@ -957,6 +1045,11 @@ class ForcedFocusDaemon:
 
                 # Integrity check: DNS (whitelist mode, every ~2 seconds)
                 if self.mode == "whitelist":
+                    if self.dns_proxy and not self.dns_proxy.is_alive() and not (self.session_type == "pomodoro" and self.pomo_phase == "break"):
+                        logging.warning("DNS Proxy thread died. Restarting.")
+                        self.dns_proxy = LocalDNSProxy(self)
+                        self.dns_proxy.start()
+                        
                     dns_check_counter += 1
                     if dns_check_counter >= 8:  # 8 * 250ms = 2s
                         dns_check_counter = 0
@@ -1055,6 +1148,173 @@ class ForcedFocusDaemon:
             return self._cmd_remove_domain(cmd)
         else:
             return {"status": "error", "message": f"Unknown action: {action}"}
+
+    def _http_server(self):
+        global WEB_DIR
+        local_web = Path(__file__).parent / "web"
+        if local_web.exists():
+            WEB_DIR = local_web
+        try:
+            server = EmbeddedHTTPServer((WEB_HOST, WEB_PORT), EmbeddedWebHandler)
+            server.daemon_ref = self
+            logging.info("Web UI listening at http://%s:%d", WEB_HOST, WEB_PORT)
+            server.serve_forever()
+        except Exception as exc:
+            logging.error("HTTP server failed: %s", exc)
+
+class EmbeddedHTTPServer(HTTPServer):
+    allow_reuse_address = True
+    daemon_ref = None
+
+
+class EmbeddedWebHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
+    def _is_origin_allowed(self) -> bool:
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        if origin in ("http://localhost:7070", "http://127.0.0.1:7070"):
+            return True
+        if origin.startswith("chrome-extension://"):
+            return True
+        return False
+
+    def _get_cors_origin(self) -> str:
+        origin = self.headers.get("Origin")
+        if origin and (origin in ("http://localhost:7070", "http://127.0.0.1:7070") or origin.startswith("chrome-extension://")):
+            return origin
+        return "http://127.0.0.1:7070"
+
+    def _send_json(self, data: dict, status: int = 200):
+        body = json.dumps(data).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", self._get_cors_origin())
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_file(self, filepath: Path):
+        if not filepath.exists() or not filepath.is_file():
+            self.send_error(404)
+            return
+        try:
+            filepath.resolve().relative_to(WEB_DIR.resolve())
+        except ValueError:
+            self.send_error(403)
+            return
+
+        mime, _ = mimetypes.guess_type(str(filepath))
+        if mime is None:
+            mime = "application/octet-stream"
+
+        body = filepath.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_body(self) -> dict:
+        MAX_BODY = 65536
+        length = int(self.headers.get("Content-Length", 0))
+        if length == 0 or length > MAX_BODY:
+            return {}
+        raw = self.rfile.read(length).decode("utf-8")
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+
+        if path.startswith("/api/") and not self._is_origin_allowed():
+            self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
+            return
+
+        if path == "/api/status":
+            self._send_json(self.server.daemon_ref._get_status())
+        elif path == "/api/lists":
+            self._send_json(self.server.daemon_ref._cmd_get_lists())
+        elif path == "/" or path == "":
+            self._send_file(WEB_DIR / "index.html")
+        else:
+            self._send_file(WEB_DIR / path.lstrip("/"))
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+        
+        if not self._is_origin_allowed():
+            self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
+            return
+            
+        body = self._read_body()
+
+        if path == "/api/start":
+            cmd = {
+                "action": "start",
+                "duration_minutes": body.get("duration", 120),
+                "mode": body.get("mode", "blacklist"),
+                "session_type": body.get("session_type", "standard"),
+                "focus_minutes": body.get("focus_minutes", 25),
+                "break_minutes": body.get("break_minutes", 5),
+                "cycles": body.get("cycles", 4),
+            }
+            self._send_json(self.server.daemon_ref._start_session(cmd))
+
+        elif path == "/api/stop":
+            self._send_json(self.server.daemon_ref._request_stop(body.get("key", "")))
+
+        elif path.startswith("/api/lists/"):
+            parts = path.strip("/").split("/")
+            if len(parts) == 4 and parts[3] == "bulk":
+                cmd = {
+                    "action": "add_domains",
+                    "list": parts[2],
+                    "domains": body.get("domains", []),
+                }
+                self._send_json(self.server.daemon_ref._cmd_add_domains(cmd))
+            else:
+                cmd = {
+                    "action": "add_domain",
+                    "list": parts[-1],
+                    "domain": body.get("domain", ""),
+                }
+                self._send_json(self.server.daemon_ref._cmd_add_domain(cmd))
+        else:
+            self._send_json({"status": "error", "message": "Unknown endpoint."}, 404)
+
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+
+        if not self._is_origin_allowed():
+            self._send_json({"status": "error", "message": "CORS policy: Origin not allowed."}, 403)
+            return
+
+        parts = path.strip("/").split("/")
+        if len(parts) >= 4 and parts[0] == "api" and parts[1] == "lists":
+            cmd = {
+                "action": "remove_domain",
+                "list": parts[2],
+                "domain": "/".join(parts[3:]),
+            }
+            self._send_json(self.server.daemon_ref._cmd_remove_domain(cmd))
+        else:
+            self._send_json({"status": "error", "message": "Unknown endpoint."}, 404)
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", self._get_cors_origin())
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
 
 
 def main():
