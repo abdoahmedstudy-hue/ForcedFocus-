@@ -16,17 +16,31 @@ let pomoBreakMin = 5;
 let pomoCycles = 4;
 
 let scheduleType = 'now'; // 'now', 'in', 'at'
+let availableGroups = {};
+let selectedGroups = new Set();
+let apiToken = ''; // Per-launch API token for mutation auth
+
+// ── HTML Sanitization ────────────────────────────────────────────────────────
+
+// P6: Static character map instead of throwaway DOM elements
+function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, c =>
+        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#039;"}[c]));
+}
 
 // Audio Manager
 const AudioManager = {
     settings: {},
     availableSounds: [],
+    _current: null,
     play: function(type) {
         // 'type' is start, rescue, unlock, etc.
         const file = this.settings[`sound_${type}`];
         if (!file) return;
-        const audio = new Audio('/sounds/' + encodeURIComponent(file));
-        audio.play().catch(e => console.log('Audio error:', e));
+        // R3: Stop previous audio before playing new one
+        if (this._current) { this._current.pause(); this._current = null; }
+        this._current = new Audio('/sounds/' + encodeURIComponent(file));
+        this._current.play().catch(e => console.log('Audio error:', e));
     }
 };
 
@@ -82,30 +96,51 @@ const els = {
     rescueCard:       $('#rescueCard'),
     rescueDuration:   $('#rescueDuration'),
     btnRescue:        $('#btnRescue'),
+    sessionGroups:    $('#sessionGroups'),
 };
 
 // ── API Helpers ──────────────────────────────────────────────────────────────
 
 async function api(method, path, body = null) {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    const headers = { 'Content-Type': 'application/json' };
+    // Include API token for mutation requests (POST, DELETE)
+    if (method !== 'GET' && apiToken) {
+        headers['X-API-Token'] = apiToken;
+    }
+    const opts = { method, headers };
     if (body) opts.body = JSON.stringify(body);
     try {
         const res = await fetch(API + path, opts);
-        return await res.json();
+        // S4: Auto-refresh token on 401 (daemon restarted)
+        if (res.status === 401 && method !== 'GET') {
+            await loadApiToken();
+            headers['X-API-Token'] = apiToken;
+            const retry = await fetch(API + path, { method, headers, body: opts.body });
+            return await retry.json();
+        }
+        const data = await res.json();
+        return data;
     } catch (err) {
-        return { status: 'error', message: 'Network error: ' + err.message };
+        console.error('API Error:', err);
+        return { status: 'error', message: 'Communication failed.' };
     }
 }
 
 // ── Toast ────────────────────────────────────────────────────────────────────
 
+let _toastTimeout = null; // R2: Track timeout to prevent stacking
+
 function showToast(msg, duration = 3000) {
+    if (_toastTimeout) clearTimeout(_toastTimeout);
     els.toast.textContent = msg;
     els.toast.classList.remove('hidden');
     els.toast.classList.add('show');
-    setTimeout(() => {
+    _toastTimeout = setTimeout(() => {
         els.toast.classList.remove('show');
-        setTimeout(() => els.toast.classList.add('hidden'), 300);
+        _toastTimeout = setTimeout(() => {
+            els.toast.classList.add('hidden');
+            _toastTimeout = null;
+        }, 300);
     }, duration);
 }
 
@@ -134,21 +169,29 @@ function updateTimerDisplay(remainingSeconds) {
     }
 }
 
+let currentRemaining = 0;
+
+// P1: Wall-clock anchored timer to prevent drift
+// R6: Check-before-decrement to prevent negative display
 function startCountdown(remainingSeconds) {
+    if (countdownInterval && Math.abs(currentRemaining - remainingSeconds) <= 2) return;
     if (countdownInterval) clearInterval(countdownInterval);
-    let remaining = remainingSeconds;
-    updateTimerDisplay(remaining);
+
+    const anchorTime = performance.now();
+    const anchorRemaining = remainingSeconds;
+    currentRemaining = remainingSeconds;
+    updateTimerDisplay(currentRemaining);
 
     countdownInterval = setInterval(() => {
-        remaining--;
-        if (remaining <= 0) {
-            remaining = 0;
+        const elapsed = (performance.now() - anchorTime) / 1000;
+        currentRemaining = Math.max(0, Math.round(anchorRemaining - elapsed));
+        updateTimerDisplay(currentRemaining);
+        if (currentRemaining <= 0) {
             clearInterval(countdownInterval);
             countdownInterval = null;
             refreshStatus();
         }
-        updateTimerDisplay(remaining);
-    }, 1000);
+    }, 250); // Higher frequency, lower visual drift
 }
 
 function stopCountdown() {
@@ -171,8 +214,21 @@ function setActiveUI(status) {
     const isPrimaryScheduled = !active && hasSchedules;
     const isFullyActive = active;
 
+    // ── Centralized Reset ──
+    // Clear all potential state classes before applying current state
+    els.statusBadge.classList.remove('active', 'break', 'pulse');
+    els.timerRing.classList.remove('active', 'break');
+    const logoIcon = $('.logo-icon');
+    if (logoIcon) logoIcon.classList.remove('pulse');
+
     // Status badge
     els.statusBadge.classList.toggle('active', isFullyActive || isPrimaryScheduled);
+    
+    // Logo pulse & Status glow
+    if (logoIcon) {
+        logoIcon.classList.toggle('pulse', isFullyActive);
+    }
+    
     if (isPrimaryScheduled) {
         els.statusBadge.querySelector('.status-text').textContent = 'SCHEDULED';
     } else {
@@ -192,69 +248,84 @@ function setActiveUI(status) {
     els.btnStart.classList.toggle('hidden', isFullyActive);
     els.btnStop.classList.toggle('hidden', !isFullyActive);
 
-    // Update Upcoming Schedules List
+    // Update Upcoming Schedules List (P2: skip if data unchanged)
     if (hasSchedules) {
-        els.upcomingSchedulesCard.classList.remove('hidden');
-        els.upcomingSchedulesCount.textContent = schedules.length;
-        els.upcomingSchedulesList.innerHTML = '';
+        const scheduleJSON = JSON.stringify(schedules);
+        if (scheduleJSON !== _lastScheduleJSON) {
+            _lastScheduleJSON = scheduleJSON;
+            els.upcomingSchedulesCard.classList.remove('hidden');
+            els.upcomingSchedulesCount.textContent = schedules.length;
+            els.upcomingSchedulesList.innerHTML = '';
         schedules.forEach(sch => {
             const li = document.createElement('li');
             li.className = 'calendar-item';
             
             let monthStr = "---";
             let dayStr = "--";
-            let timeStr = sch.starts_at;
+            let timeStr = String(sch.starts_at || '');
             
             try {
-                const parts = sch.starts_at.split(' ');
+                const parts = String(sch.starts_at || '').split(' ');
                 if (parts.length >= 3) {
                     const dateParts = parts[0].split('-');
                     if (dateParts.length === 3) {
                         const m = parseInt(dateParts[1], 10);
                         const d = parseInt(dateParts[2], 10);
                         const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-                        monthStr = monthNames[m - 1];
+                        monthStr = monthNames[m - 1] || '---';
                         dayStr = d.toString();
                         timeStr = `${parts[1]} ${parts[2]}`;
                     }
                 }
             } catch(e) {}
             
-            li.innerHTML = `
-                <div class="cal-date">
-                    <span class="cal-month">${monthStr}</span>
-                    <span class="cal-day">${dayStr}</span>
-                </div>
-                <div class="cal-details">
-                    <div class="cal-time">${timeStr}</div>
-                    <div class="cal-title">${sch.mode.toUpperCase()} <span class="cal-type">• ${sch.session_type}</span></div>
-                    <div class="cal-duration">⏳ ${sch.duration_minutes} mins</div>
-                </div>
-            `;
+            // Build DOM safely to prevent XSS (no innerHTML with server data)
+            const calDate = document.createElement('div');
+            calDate.className = 'cal-date';
+            const calMonth = document.createElement('span');
+            calMonth.className = 'cal-month';
+            calMonth.textContent = monthStr;
+            const calDay = document.createElement('span');
+            calDay.className = 'cal-day';
+            calDay.textContent = dayStr;
+            calDate.appendChild(calMonth);
+            calDate.appendChild(calDay);
+
+            const calDetails = document.createElement('div');
+            calDetails.className = 'cal-details';
+            const calTime = document.createElement('div');
+            calTime.className = 'cal-time';
+            calTime.textContent = timeStr;
+            const calTitle = document.createElement('div');
+            calTitle.className = 'cal-title';
+            calTitle.textContent = String(sch.mode || '').toUpperCase() + ' ';
+            const calType = document.createElement('span');
+            calType.className = 'cal-type';
+            calType.textContent = '• ' + String(sch.session_type || '');
+            calTitle.appendChild(calType);
+            const calDuration = document.createElement('div');
+            calDuration.className = 'cal-duration';
+            calDuration.textContent = '⏳ ' + String(sch.duration_minutes || 0) + ' mins';
+            calDetails.appendChild(calTime);
+            calDetails.appendChild(calTitle);
+            calDetails.appendChild(calDuration);
+
+            li.appendChild(calDate);
+            li.appendChild(calDetails);
             els.upcomingSchedulesList.appendChild(li);
         });
+        } // P2: end scheduleJSON changed block
     } else {
         els.upcomingSchedulesCard.classList.add('hidden');
-        els.upcomingSchedulesList.innerHTML = '';
+        if (_lastScheduleJSON !== '') {
+            els.upcomingSchedulesList.innerHTML = '';
+            _lastScheduleJSON = '';
+        }
     }
 
-    // If it's just scheduled (not yet blocking)
-    if (isPrimaryScheduled) {
-        const nextSch = schedules[0];
-        els.timerRing.classList.remove('break');
-        els.modeDisplay.textContent = `Mode: ${nextSch.mode}`;
-        els.expiresDisplay.textContent = `Starts at: ${nextSch.starts_at}`;
-        els.pomoStatus.classList.add('hidden');
-        els.timerLabel.textContent = 'STARTING IN';
-        els.unlockInfo.classList.add('hidden');
-        
-        totalSessionSeconds = 0; // disables progress ring animation
-        startCountdown(nextSch.starting_in_seconds || 0);
-        return;
-    }
-
-    // Mode & expires info
-    if (active) {
+    // ── 4. Main Timer Logic ──
+    if (isFullyActive) {
+        // Mode & expires info
         if (status.session_type === 'rescue') {
             els.modeDisplay.textContent = `Mode: Rescue Throne 🛡️`;
         } else {
@@ -277,45 +348,62 @@ function setActiveUI(status) {
             }
             
             // Timer ring color
-            if (status.pomo_phase === 'break') {
-                els.timerRing.classList.add('break');
-            } else {
-                els.timerRing.classList.remove('break');
-            }
+            els.timerRing.classList.toggle('break', status.pomo_phase === 'break');
             els.timerLabel.textContent = status.pomo_phase.toUpperCase();
+            
+            totalSessionSeconds = status.pomo_phase_total || 1;
+            startCountdown(status.pomo_phase_remaining || 0);
         } else {
             els.pomoStatus.classList.add('hidden');
             els.timerRing.classList.remove('break');
             els.timerLabel.textContent = 'REMAINING';
+            
+            totalSessionSeconds = status.total_duration_seconds || status.remaining_seconds;
+            startCountdown(status.remaining_seconds);
         }
+        
+        // Handle pending unlock box
+        if (status.pending_unlock) {
+            els.unlockInfo.classList.remove('hidden');
+            const unlockSecs = status.pending_unlock_seconds || 0;
+            els.unlockInfo.querySelector('p').textContent =
+                `⏱ Unlock pending — releases at ${status.pending_unlock} (${formatTime(unlockSecs)} left)`;
+        } else {
+            els.unlockInfo.classList.add('hidden');
+        }
+
+    } else if (isPrimaryScheduled) {
+        // Scheduled state (not yet active)
+        const nextSch = schedules[0];
+        const secs = nextSch.starting_in_seconds || 0;
+        
+        els.timerRing.classList.remove('break');
+        els.modeDisplay.textContent = `Mode: ${nextSch.mode}`;
+        els.expiresDisplay.textContent = `Starts at: ${nextSch.starts_at}`;
+        els.pomoStatus.classList.add('hidden');
+        els.unlockInfo.classList.add('hidden');
+        
+        if (secs <= 0) {
+            els.timerLabel.textContent = 'STARTING...';
+            els.statusBadge.classList.add('pulse'); // Visual cue for transition
+            els.timerValue.textContent = '00:00:00';
+            stopCountdown();
+        } else {
+            els.timerLabel.textContent = 'STARTING IN';
+            els.statusBadge.classList.remove('pulse');
+            totalSessionSeconds = 0; // disables progress ring animation
+            startCountdown(secs);
+        }
+        
     } else {
+        // Idle state
         els.modeDisplay.textContent = '—';
         els.expiresDisplay.textContent = '—';
         els.pomoStatus.classList.add('hidden');
         els.timerRing.classList.remove('break');
         els.timerLabel.textContent = 'READY';
-    }
-
-    // Pending unlock
-    if (status.pending_unlock) {
-        els.unlockInfo.classList.remove('hidden');
-        const unlockSecs = status.pending_unlock_seconds || 0;
-        els.unlockInfo.querySelector('p').textContent =
-            `⏱ Unlock pending — releases at ${status.pending_unlock} (${formatTime(unlockSecs)} left)`;
-    } else {
         els.unlockInfo.classList.add('hidden');
-    }
-
-    // Timer
-    if (active) {
-        if (status.session_type === 'pomodoro') {
-            totalSessionSeconds = status.pomo_phase_total || 1;
-            startCountdown(status.pomo_phase_remaining || 0);
-        } else {
-            totalSessionSeconds = status.total_duration_seconds || status.remaining_seconds;
-            startCountdown(status.remaining_seconds);
-        }
-    } else {
+        
         totalSessionSeconds = 0;
         stopCountdown();
         els.timerValue.textContent = '00:00:00';
@@ -324,9 +412,22 @@ function setActiveUI(status) {
 
 // ── Refresh Status ───────────────────────────────────────────────────────────
 
+// S1: Track state for detecting phase transitions
+let _lastPomoPhase = null;
+let _lastActiveState = null;
+let _lastScheduleJSON = ''; // P2: Track schedule data to avoid DOM thrash
+
 async function refreshStatus() {
     const data = await api('GET', '/api/status');
     if (data.status === 'ok') {
+        // S1: Detect phase transitions that require timer reset
+        const phaseChanged = data.pomo_phase !== _lastPomoPhase;
+        const activeChanged = data.active !== _lastActiveState;
+        if (phaseChanged || activeChanged) {
+            if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+        }
+        _lastPomoPhase = data.pomo_phase || null;
+        _lastActiveState = data.active;
         setActiveUI(data);
     }
 }
@@ -501,6 +602,8 @@ function initEvents() {
             payload = { duration, mode: currentMode, session_type: 'standard' };
         }
         
+        payload.groups = Array.from(selectedGroups);
+        
         if (scheduleType === 'in') {
             const min = parseInt(els.scheduleIn.value);
             if (!min || min < 1) {
@@ -517,21 +620,28 @@ function initEvents() {
             payload.schedule_at = time;
         }
         
+        const originalBtnHTML = els.btnStart.innerHTML;
         els.btnStart.textContent = '⏳ Starting...';
-        const res = await api('POST', '/api/start', payload);
-        els.btnStart.innerHTML = '<span class="btn-icon">▶</span> Start Blocking';
-        if (res.status === 'ok') {
-            if (payload.schedule_in || payload.schedule_at) {
-                // For scheduled items, we might not play the immediate start sound.
-                // We'll let it be silent or just a subtle notification.
+        els.btnStart.disabled = true;
+        
+        try {
+            const res = await api('POST', '/api/start', payload);
+            if (res.status === 'ok') {
+                if (payload.schedule_in || payload.schedule_at) {
+                    showToast('Session scheduled successfully! 🗓️');
+                } else {
+                    showToast('Session started! 🚀');
+                }
             } else {
-                AudioManager.play('start');
+                showToast(`Error: ${res.message || 'Failed to start'}`);
             }
-            showToast(res.message);
-            refreshStatus();
-        } else {
-            showToast(res.message || 'Failed to start session.');
+        } catch (err) {
+            showToast('Connection failed. Is the daemon running?');
+        } finally {
+            els.btnStart.innerHTML = originalBtnHTML;
+            els.btnStart.disabled = false;
         }
+        refreshStatus();
     });
 
     // Rescue button
@@ -543,14 +653,19 @@ function initEvents() {
             session_type: 'rescue'
         };
         els.btnRescue.textContent = '⏳ Activating...';
-        const res = await api('POST', '/api/start', payload);
-        els.btnRescue.innerHTML = '<span class="btn-icon">⚡</span> Activate Rescue';
-        if (res.status === 'ok') {
-            AudioManager.play('rescue');
-            showToast(res.message);
-            refreshStatus();
-        } else {
-            showToast(res.message || 'Failed to activate Rescue Throne.');
+        els.btnRescue.disabled = true;
+        try {
+            const res = await api('POST', '/api/start', payload);
+            if (res.status === 'ok') {
+                AudioManager.play('rescue');
+                showToast(res.message);
+                refreshStatus();
+            } else {
+                showToast(res.message || 'Failed to activate Rescue Throne.');
+            }
+        } finally {
+            els.btnRescue.innerHTML = '<span class="btn-icon">⚡</span> Activate Rescue';
+            els.btnRescue.disabled = false;
         }
     });
 
@@ -615,6 +730,12 @@ function initEvents() {
         }
     });
 
+    // R5: Close modal on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !els.stopModal.classList.contains('hidden')) {
+            els.stopModal.classList.add('hidden');
+        }
+    });
 
 }
 
@@ -684,10 +805,24 @@ async function addDomain(listName) {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
+async function loadApiToken() {
+    try {
+        const res = await fetch('/api/token');
+        const data = await res.json();
+        if (data.token) {
+            apiToken = data.token;
+        }
+    } catch (e) {
+        console.error('Failed to load API token:', e);
+    }
+}
+
 async function init() {
     initEvents();
+    await loadApiToken();
     await refreshStatus();
     await refreshLists();
+    await refreshGroups();
     await loadSettings();
 
     // S10: Set min datetime to now, preventing past date selection
@@ -700,6 +835,16 @@ async function init() {
 
     // Poll status every 2 seconds
     pollInterval = setInterval(refreshStatus, 2000);
+
+    // P4: Pause polling when tab is hidden to save resources
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+        } else {
+            refreshStatus(); // Immediate sync on return
+            pollInterval = setInterval(refreshStatus, 2000);
+        }
+    });
 }
 
 async function loadSettings() {
@@ -719,6 +864,42 @@ async function loadSettings() {
     }
 }
 
+
+
+async function refreshGroups() {
+    const data = await api('GET', '/api/groups');
+    if (data.status === 'ok') {
+        availableGroups = data.groups || {};
+        renderSessionGroups();
+    }
+}
+
+function renderSessionGroups() {
+    if (Object.keys(availableGroups).length === 0) {
+        els.sessionGroups.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">No groups configured in Settings.</div>';
+        return;
+    }
+
+    els.sessionGroups.innerHTML = '';
+    for (const name of Object.keys(availableGroups)) {
+        const btn = document.createElement('button');
+        btn.className = 'dur-btn' + (selectedGroups.has(name) ? ' active' : '');
+        btn.dataset.group = name;
+        btn.style.cssText = 'padding: 8px 16px; font-size: 12px; border-radius: 100px;';
+        btn.textContent = name; // Safe — no innerHTML with user data
+        btn.addEventListener('click', () => {
+            const gname = btn.dataset.group;
+            if (selectedGroups.has(gname)) {
+                selectedGroups.delete(gname);
+                btn.classList.remove('active');
+            } else {
+                selectedGroups.add(gname);
+                btn.classList.add('active');
+            }
+        });
+        els.sessionGroups.appendChild(btn);
+    }
+}
 
 
 document.addEventListener('DOMContentLoaded', init);

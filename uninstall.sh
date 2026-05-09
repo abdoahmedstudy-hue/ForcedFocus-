@@ -63,15 +63,16 @@ if [[ -f "$KS_HASH_FILE" ]]; then
 
     VERIFY_RESULT=$(printf '%s' "$PASSPHRASE" | $PYTHON_BIN -c "
 import json, hashlib, hmac, sys
+ks_path = sys.argv[1]
 try:
-    stored = json.load(open('${KS_HASH_FILE}'))
+    stored = json.load(open(ks_path))
     salt = bytes.fromhex(stored['salt'])
     expected = stored['hash']
     computed = hashlib.pbkdf2_hmac('sha256', sys.stdin.buffer.read(), salt, 100000).hex()
     print('OK' if hmac.compare_digest(computed, expected) else 'FAIL')
 except Exception as e:
     print(f'ERROR:{e}')
-" 2>&1)
+" "$KS_HASH_FILE" 2>&1)
 
     if [[ "$VERIFY_RESULT" != "OK" ]]; then
         echo -e "${RED}  ✗ Invalid passphrase. Uninstall aborted.${NC}"

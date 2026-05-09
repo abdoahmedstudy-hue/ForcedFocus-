@@ -171,15 +171,15 @@
                                 </div>
                                 <div class="pomo-custom">
                                     <div class="pomo-field">
-                                        <label>Focus (min)</label>
+                                        <label for="pomoFocus">Focus (min)</label>
                                         <input type="number" id="pomoFocus" min="1" max="240" value="25">
                                     </div>
                                     <div class="pomo-field">
-                                        <label>Break (min)</label>
+                                        <label for="pomoBreak">Break (min)</label>
                                         <input type="number" id="pomoBreak" min="1" max="60" value="5">
                                     </div>
                                     <div class="pomo-field">
-                                        <label>Cycles</label>
+                                        <label for="pomoCycles">Cycles</label>
                                         <input type="number" id="pomoCycles" min="1" max="50" value="4">
                                     </div>
                                 </div>
@@ -212,6 +212,20 @@
                 <!-- TAB: Rules -->
                 <div class="tab-pane" id="tab-rules">
                     <section class="lists-section">
+                        <!-- Active Groups Selection -->
+                        <div class="card list-card" style="grid-column: 1 / -1; margin-bottom: 0;">
+                            <div class="list-header">
+                                <h2 class="card-title">
+                                    <span class="list-icon">🛡️</span> Domain Groups
+                                </h2>
+                            </div>
+                            <p class="list-desc">Select groups to include in your next session. Configure groups in Settings.</p>
+                            <div id="sessionGroups" style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px;">
+                                <!-- Dynamically populated -->
+                                <div class="loading" style="font-size: 13px; color: var(--text-muted);">Loading groups...</div>
+                            </div>
+                        </div>
+
                         <!-- Blacklist -->
                         <div class="card list-card">
                             <div class="list-header">
@@ -272,11 +286,11 @@
                             </div>
                             <div class="schedule-inputs">
                                 <div id="scheduleInWrapper" class="hidden">
-                                    <label>Start after (minutes):</label>
+                                    <label for="scheduleIn">Start after (minutes):</label>
                                     <input type="number" id="scheduleIn" min="1" max="1440" placeholder="e.g. 15">
                                 </div>
                                 <div id="scheduleAtWrapper" class="hidden">
-                                    <label>Start on date & time:</label>
+                                    <label for="scheduleAt">Start on date & time:</label>
                                     <input type="datetime-local" id="scheduleAt">
                                 </div>
                             </div>
@@ -305,7 +319,10 @@
                 <p>Enter your kill-switch passphrase.<br>
                     <strong>Blocking will continue for 20 more minutes</strong> after verification.
                 </p>
-                <input type="password" id="passphraseInput" placeholder="Kill-switch passphrase" autocomplete="off">
+                <form id="passphraseForm" onsubmit="return false;">
+                    <label for="passphraseInput" class="sr-only">Kill-switch passphrase</label>
+                    <input type="password" id="passphraseInput" placeholder="Kill-switch passphrase" autocomplete="off">
+                </form>
                 <div class="modal-actions">
                     <button class="btn btn-cancel" id="btnCancelStop">Cancel</button>
                     <button class="btn btn-confirm" id="btnConfirmStop">Confirm Unlock</button>
