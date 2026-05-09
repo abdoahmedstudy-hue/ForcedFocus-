@@ -157,8 +157,8 @@ body::after {
 
 .timer-ring {
     position: relative;
-    width: 130px;
-    height: 130px;
+    width: 160px;
+    height: 160px;
 }
 
 .timer-ring svg {
@@ -445,8 +445,13 @@ body::after {
     stroke: var(--green) !important;
 }
 
-.phase-dot.break { background: var(--green); }
-.phase-dot.focus { background: var(--red); }
+.phase-dot.break {
+    background: var(--green);
+}
+
+.phase-dot.focus {
+    background: var(--red);
+}
 
 .btn-stop {
     width: 100%;
@@ -479,8 +484,15 @@ body::after {
 }
 
 @keyframes popIn {
-    from { opacity: 0; transform: translateY(-8px) scale(0.98); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
+    from {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -642,8 +654,15 @@ body::after {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(5px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .hidden {
